@@ -1,0 +1,1 @@
+# Intelligent-Ransomeware-Detection-using-memory-artifacts
