@@ -1,0 +1,75 @@
+# ============================================================
+# Python & Virtual Environments
+# ============================================================
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Bytecode & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ============================================================
+# Databases
+# ============================================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ============================================================
+# Evidence & Memory Dumps (Extremely large / sensitive)
+# ============================================================
+evidence/*
+!evidence/.gitkeep
+backend/evidence/*
+!backend/evidence/.gitkeep
+*.raw
+*.dmp
+*.vmem
+*.crash
+*.img
+*.iso
+*.docx
+
+# ============================================================
+# Reports & Analysis Generated Files
+# ============================================================
+reports/*
+!reports/.gitkeep
+
+# ============================================================
+# Frontend & Node
+# ============================================================
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+frontend/.vite/
+
+# ============================================================
+# Logs & Environment
+# ============================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.*
+!.env.example
+
+# ============================================================
+# OS & Editors
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo

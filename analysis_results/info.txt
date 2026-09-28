@@ -1,0 +1,24 @@
+Volatility 3 Framework 2.28.0
+
+Variable	Value
+
+Kernel Base	0xf8009f200000
+DTB	0x1ae000
+Symbols	file:///C:/Users/dhani/Downloads/volatility3-win-exes-2.28.0/symbols/windows/ntkrnlmp.pdb/72C69E726C648BC18257AF38FA78A2F2-1.json.xz
+Is64Bit	True
+IsPAE	False
+layer_name	0 WindowsIntel32e
+memory_layer	1 FileLayer
+KdVersionBlock	0xf800a000aa20
+Major/Minor	15.26100
+MachineType	34404
+KeNumberProcessors	12
+SystemTime	2026-08-27 12:45:05+00:00
+NtSystemRoot	C:\Windows
+NtProductType	NtProductWinNt
+NtMajorVersion	10
+NtMinorVersion	0
+PE MajorOperatingSystemVersion	10
+PE MinorOperatingSystemVersion	0
+PE Machine	34404
+PE TimeDateStamp	Wed Feb 13 20:47:57 2069
