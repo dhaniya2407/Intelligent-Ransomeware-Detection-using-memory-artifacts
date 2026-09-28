@@ -6,7 +6,7 @@ ForensiRansom AI is an end-to-end digital forensics and incident response (DFIR)
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 - **Automated Memory Forensics**: Integrates with Volatility 3 to extract and parse memory artifacts (`pslist`, `psscan`, `pstree`, `netscan`, `cmdline`).
 - **Signature & Rule-Based Detection**: Integrates YARA pattern matching to identify known ransomware families and suspicious binary signatures.
@@ -18,14 +18,14 @@ ForensiRansom AI is an end-to-end digital forensics and incident response (DFIR)
 
 ---
 
-## 🛠️ System Architecture
+## System Architecture
 
 - **Backend**: Python 3.12, FastAPI, SQLAlchemy, SQLite, Volatility 3, Scikit-Learn, YARA.
 - **Frontend**: React 19, Vite, Axios, React Router, Lucide Icons.
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
 ### 1. One-Click Launch (Windows)
 Double-click `start.bat` in the project root to automatically launch both backend and frontend servers.
@@ -53,7 +53,7 @@ npm run dev
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 ForensiRansomAI/
@@ -78,5 +78,5 @@ ForensiRansomAI/
 
 ---
 
-## 🛡️ License & Disclaimer
+## License & Disclaimer
 This project is developed for digital forensic research, security auditing, and defensive incident response purposes.
