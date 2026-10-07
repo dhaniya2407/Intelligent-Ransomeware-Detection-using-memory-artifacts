@@ -24,6 +24,15 @@ DATABASE_PATH = os.path.join(
     "forensic.db"
 )
 
+if not os.path.exists(DATABASE_PATH):
+    for candidate in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "forensic.db"),
+        os.path.join(os.getcwd(), "forensic.db"),
+    ]:
+        if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+            DATABASE_PATH = candidate
+            break
+
 
 DATABASE_URL = (
     "sqlite:///"
