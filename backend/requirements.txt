@@ -6,3 +6,4 @@ bcrypt
 passlib
 yara-python
 pandas
+joblib
