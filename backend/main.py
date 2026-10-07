@@ -137,7 +137,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-
+@app.get("/")
+def root():
+    return {
+        "message": "ForensiRansom AI Backend is working",
+        "version": "1.0.0"
+    }
 # ============================================================
 # CORS CONFIGURATION
 # ============================================================
