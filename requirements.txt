@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlalchemy
+python-multipart
+bcrypt
+passlib
+yara-python
+pandas
+joblib

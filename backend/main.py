@@ -16,8 +16,11 @@ from fastapi import (
     Depends,
     HTTPException,
     UploadFile,
-    File
+    File,
+    Request
 )
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -137,8 +140,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# ============================================================
+# FRONTEND STATIC FILES CONFIGURATION
+# ============================================================
+
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIST = os.path.join(PROJECT_ROOT, "frontend", "dist")
+if not os.path.isdir(FRONTEND_DIST):
+    FRONTEND_DIST = os.path.join(BACKEND_DIR, "static")
+
+assets_dir = os.path.join(FRONTEND_DIST, "assets")
+if os.path.isdir(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+
 @app.get("/")
 def root():
+    index_html = os.path.join(FRONTEND_DIST, "index.html")
+    if os.path.isfile(index_html):
+        return FileResponse(index_html)
     return {
         "message": "ForensiRansom AI Backend is working",
         "version": "1.0.0"
@@ -350,11 +370,11 @@ class CaseUpdate(BaseModel):
 
 
 # ============================================================
-# ROOT ENDPOINT
+# API STATUS ENDPOINT
 # ============================================================
 
-@app.get("/")
-def root():
+@app.get("/api/status")
+def api_status():
 
     return {
 
@@ -508,8 +528,13 @@ def create_case(
 
 @app.get("/cases")
 def get_cases(
+    request: Request,
     db: Session = Depends(get_db)
 ):
+    accept = request.headers.get("accept", "")
+    index_html = os.path.join(FRONTEND_DIST, "index.html")
+    if "text/html" in accept and "application/json" not in accept and os.path.isfile(index_html):
+        return FileResponse(index_html)
 
     cases = db.query(
         Case
@@ -796,8 +821,13 @@ async def upload_evidence(
 
 @app.get("/evidence")
 def get_all_evidence(
+    request: Request,
     db: Session = Depends(get_db)
 ):
+    accept = request.headers.get("accept", "")
+    index_html = os.path.join(FRONTEND_DIST, "index.html")
+    if "text/html" in accept and "application/json" not in accept and os.path.isfile(index_html):
+        return FileResponse(index_html)
 
     evidence = db.query(
         Evidence
@@ -2828,3 +2858,20 @@ def application_info():
             "Forensic Reporting"
         ]
     }
+
+
+# ============================================================
+# SPA CLIENT-SIDE ROUTING & STATIC ASSETS HANDLER
+# ============================================================
+
+@app.get("/{full_path:path}")
+async def serve_spa_app(full_path: str):
+    candidate = os.path.join(FRONTEND_DIST, full_path)
+    if os.path.isfile(candidate):
+        return FileResponse(candidate)
+
+    index_html = os.path.join(FRONTEND_DIST, "index.html")
+    if os.path.isfile(index_html):
+        return FileResponse(index_html)
+
+    raise HTTPException(status_code=404, detail="Not Found")

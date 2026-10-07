@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Shield, Lock, User, UserPlus } from "lucide-react";
+import { API_BASE_URL } from "../config";
 
 function Login() {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ function Login() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/login",
+        `${API_BASE_URL}/login`,
         {
           method: "POST",
           headers: {

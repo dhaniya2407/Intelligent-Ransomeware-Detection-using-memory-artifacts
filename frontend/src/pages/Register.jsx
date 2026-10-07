@@ -8,6 +8,7 @@ import {
   Users,
   ArrowLeft
 } from "lucide-react";
+import { API_BASE_URL } from "../config";
 
 import "./Register.css";
 
@@ -27,7 +28,7 @@ function Register() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/register",
+        `${API_BASE_URL}/register`,
         {
           method: "POST",
           headers: {
