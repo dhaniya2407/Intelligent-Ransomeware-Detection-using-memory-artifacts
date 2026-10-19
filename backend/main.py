@@ -20,7 +20,7 @@ from fastapi import (
     Request
 )
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -95,6 +95,13 @@ from forensic_engine.yara_engine import (
 )
 
 from ml_engine.predictor import predict
+
+from reports.gemini_service import get_recommendations
+from reports.generator import (
+    generate_pdf_report,
+    generate_json_report,
+    generate_evidence_log
+)
 
 
 # ============================================================
@@ -2809,13 +2816,164 @@ def delete_evidence(
     db.commit()
 
     return {
-
         "message":
             "Evidence and analysis results deleted successfully",
-
         "evidence_id":
             evidence_id
     }
+
+
+# ============================================================
+# REPORTS & GEMINI AI FORENSIC RECOMMENDATIONS
+# ============================================================
+
+def _load_report_evidence_and_analysis(evidence_id: str, db: Session) -> dict:
+    """
+    Helper to safely retrieve evidence, case metadata, and complete analysis.
+    """
+    evidence = db.query(Evidence).filter(
+        Evidence.evidence_id == evidence_id
+    ).first()
+
+    if not evidence:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Evidence {evidence_id} not found."
+        )
+
+    complete_record = db.query(AnalysisResult).filter(
+        AnalysisResult.evidence_id == evidence_id,
+        AnalysisResult.analysis_type == "complete"
+    ).order_by(
+        AnalysisResult.created_at.desc()
+    ).first()
+
+    if not complete_record:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No completed analysis found for evidence {evidence_id}. Please run Full Analysis first."
+        )
+
+    try:
+        complete_result = json.loads(complete_record.result)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Stored analysis result contains invalid JSON."
+        )
+
+    case_data = db.query(Case).filter(
+        Case.case_id == evidence.case_id
+    ).first()
+
+    complete_result["case"] = {
+        "case_id": case_data.case_id if case_data else evidence.case_id,
+        "case_name": case_data.case_name if case_data else "Forensic Investigation",
+        "investigator": case_data.investigator if case_data else "Dhaniya",
+        "description": case_data.description if case_data else None,
+        "status": case_data.status if case_data else "Open"
+    }
+
+    complete_result["evidence"] = {
+        "evidence_id": evidence.evidence_id,
+        "case_id": evidence.case_id,
+        "filename": evidence.filename,
+        "file_path": evidence.file_path,
+        "file_size": evidence.file_size,
+        "sha256": evidence.sha256,
+        "evidence_type": evidence.evidence_type,
+        "status": evidence.status,
+        "created_at": str(evidence.created_at)
+    }
+
+    return complete_result
+
+
+@app.get("/reports/recommendations/{evidence_id}")
+@app.post("/reports/recommendations/{evidence_id}")
+def get_report_recommendations(
+    evidence_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Generates AI-powered forensic investigation recommendations for the selected evidence.
+    Uses Google Gemini when GEMINI_API_KEY is configured; seamlessly falls back
+    to the offline Forensic Rule Engine when Gemini is not configured or unavailable.
+    """
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    recommendations = get_recommendations(analysis_data)
+    return recommendations
+
+
+@app.get("/reports/pdf/{evidence_id}")
+def download_pdf_report(
+    evidence_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Generates and downloads a formal forensic investigation PDF report
+    containing case metadata, SHA-256 verification, Volatility findings,
+    YARA detections, IOCs, ML assessment, risk score, and AI recommendations.
+    """
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    pdf_bytes = generate_pdf_report(analysis_data)
+    
+    case_id = analysis_data.get("case", {}).get("case_id", "FRA")
+    filename = f"Forensic_Report_{case_id}_{evidence_id}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+@app.get("/reports/json/{evidence_id}")
+def export_json_report(
+    evidence_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Exports the comprehensive forensic investigation report in structured JSON format.
+    """
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    json_report = generate_json_report(analysis_data)
+    
+    case_id = analysis_data.get("case", {}).get("case_id", "FRA")
+    filename = f"Forensic_Report_{case_id}_{evidence_id}.json"
+
+    return Response(
+        content=json.dumps(json_report, indent=2),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+@app.get("/reports/evidence-log/{evidence_id}")
+def export_evidence_log(
+    evidence_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Exports a digital evidence integrity & verification audit log in JSON format.
+    """
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    log_data = generate_evidence_log(analysis_data)
+
+    case_id = analysis_data.get("case", {}).get("case_id", "FRA")
+    filename = f"Evidence_Log_{case_id}_{evidence_id}.json"
+
+    return Response(
+        content=json.dumps(log_data, indent=2),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 # ============================================================

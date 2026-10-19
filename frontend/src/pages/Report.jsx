@@ -18,6 +18,12 @@ import {
   Database,
   LockKeyhole,
   Fingerprint,
+  Sparkles,
+  Download,
+  FileCode,
+  ExternalLink,
+  ShieldAlert,
+  ListChecks,
 } from "lucide-react";
 
 import "./Report.css";
@@ -301,6 +307,13 @@ export default function Report() {
 
   const [error, setError] = useState("");
 
+  const [recommendations, setRecommendations] = useState(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingJson, setDownloadingJson] = useState(false);
+  const [downloadingLog, setDownloadingLog] = useState(false);
+
   /*
    * ---------------------------------------------------------
    * LOAD EVIDENCE + CASES
@@ -448,9 +461,42 @@ export default function Report() {
     }
   };
 
+  const fetchRecommendations = async (id = selectedEvidenceId) => {
+    if (!id) {
+      setRecommendations(null);
+      return;
+    }
+
+    try {
+      setRecommendationsLoading(true);
+      setRecommendationError("");
+
+      const response = await fetch(
+        `${API_BASE_URL}/reports/recommendations/${id}`,
+        { method: "POST" }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail || "Unable to load recommendations."
+        );
+      }
+
+      setRecommendations(data);
+    } catch (err) {
+      console.warn("Recommendation load:", err.message);
+      setRecommendationError(err.message);
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedEvidenceId) {
       loadAnalysis(selectedEvidenceId);
+      fetchRecommendations(selectedEvidenceId);
     }
   }, [selectedEvidenceId]);
 
@@ -836,11 +882,276 @@ export default function Report() {
     await loadMetadata();
 
     if (selectedEvidenceId) {
-      await loadAnalysis(
-        selectedEvidenceId
-      );
+      await Promise.all([
+        loadAnalysis(selectedEvidenceId),
+        fetchRecommendations(selectedEvidenceId),
+      ]);
     }
   };
+
+  const downloadPdf = async () => {
+    if (!selectedEvidenceId) return;
+
+    try {
+      setDownloadingPdf(true);
+      const res = await fetch(
+        `${API_BASE_URL}/reports/pdf/${selectedEvidenceId}`
+      );
+
+      if (!res.ok) {
+        throw new Error(
+          "Server PDF generation unavailable. Opening browser print view."
+        );
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Forensic_Report_${caseId || "FRA"}_${selectedEvidenceId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.warn("PDF download fallback to print:", err.message);
+      window.print();
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const downloadJson = async () => {
+    if (!selectedEvidenceId) return;
+
+    try {
+      setDownloadingJson(true);
+      const res = await fetch(
+        `${API_BASE_URL}/reports/json/${selectedEvidenceId}`
+      );
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Forensic_Report_${caseId || "FRA"}_${selectedEvidenceId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+      throw new Error("Server JSON export returned non-200");
+    } catch (err) {
+      const clientReport = {
+        metadata: {
+          project: "ForensiRansom AI",
+          generated_at: new Date().toISOString()
+        },
+        case_details: {
+          case_id: caseId,
+          case_name: caseName,
+          investigator,
+          status: caseStatus,
+          description: caseDescription
+        },
+        evidence_details: {
+          evidence_id: evidenceId,
+          filename,
+          file_size: fileSize,
+          sha256,
+          status: integrity
+        },
+        findings: {
+          total_events: totalEvents,
+          process_events: processEvents,
+          command_events: commandEvents,
+          network_events: networkEvents,
+          suspicious_events: suspiciousEvents,
+          yara_matches: yaraMatchCount,
+          correlations: correlationCount
+        },
+        risk: {
+          score: riskScore,
+          level: riskLevel
+        },
+        ml: {
+          classification,
+          probabilities
+        },
+        recommendations
+      };
+
+      const blob = new Blob([JSON.stringify(clientReport, null, 2)], {
+        type: "application/json"
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Forensic_Report_${caseId || "FRA"}_${selectedEvidenceId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } finally {
+      setDownloadingJson(false);
+    }
+  };
+
+  const downloadEvidenceLog = async () => {
+    if (!selectedEvidenceId) return;
+
+    try {
+      setDownloadingLog(true);
+      const res = await fetch(
+        `${API_BASE_URL}/reports/evidence-log/${selectedEvidenceId}`
+      );
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Evidence_Log_${caseId || "FRA"}_${selectedEvidenceId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+      throw new Error("Server log export returned non-200");
+    } catch (err) {
+      const logData = {
+        title: "ForensiRansom AI Evidence Verification Log",
+        case_id: caseId,
+        case_name: caseName,
+        evidence_id: evidenceId,
+        filename,
+        file_size: fileSize,
+        sha256_hash: sha256,
+        status: integrity,
+        investigator,
+        exported_at: new Date().toISOString()
+      };
+
+      const blob = new Blob([JSON.stringify(logData, null, 2)], {
+        type: "application/json"
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Evidence_Log_${caseId || "FRA"}_${selectedEvidenceId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } finally {
+      setDownloadingLog(false);
+    }
+  };
+
+  const extractedIocs = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+
+    if (sha256 && sha256 !== "Not recorded") {
+      seen.add(sha256);
+      list.push({
+        type: "Evidence File SHA-256",
+        indicator: sha256,
+        context: `${filename} (${formatFileSize(fileSize)})`,
+        severity: "INFO",
+        source: "Evidence Verification"
+      });
+    }
+
+    yaraFindings.forEach((yf) => {
+      const rule = yf.rule || yf.rule_name || "Unknown Rule";
+      const raw = yf.raw_data || yf.description || "";
+      const key = `${rule}-${raw}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({
+          type: "YARA Detection",
+          indicator: rule,
+          context: raw || "Signature match on memory artifacts",
+          severity: "HIGH",
+          source: yf.source || yf.plugin || "YARA Engine"
+        });
+      }
+    });
+
+    analyzedEvents.forEach((ev) => {
+      const inds = ev.indicators || [];
+      inds.forEach((ind) => {
+        if (!seen.has(ind)) {
+          seen.add(ind);
+          list.push({
+            type: "Suspicious Activity",
+            indicator: ind,
+            context: ev.evidence?.raw_data || ev.what || "Suspicious forensic event",
+            severity: (ev.rule_score || 0) >= 10 ? "HIGH" : "MEDIUM",
+            source: ev.source || "Rule Engine"
+          });
+        }
+      });
+    });
+
+    correlations.forEach((c) => {
+      const desc = c.description || c.message || "Artifact correlation";
+      if (!seen.has(desc)) {
+        seen.add(desc);
+        list.push({
+          type: "Cross-Artifact Correlation",
+          indicator: desc,
+          context: `Type: ${c.correlation_type || "Correlation"}`,
+          severity: c.severity || "MEDIUM",
+          source: "Correlation Engine"
+        });
+      }
+    });
+
+    return list;
+  }, [sha256, filename, fileSize, yaraFindings, analyzedEvents, correlations]);
+
+  const securityResources = [
+    {
+      title: "MITRE ATT&CK Framework",
+      category: "Adversary Tactics & Techniques",
+      description: "Globally-accessible knowledge base of adversary tactics and techniques based on real-world observations.",
+      url: "https://attack.mitre.org/",
+      badge: "MITRE ATT&CK"
+    },
+    {
+      title: "CISA StopRansomware Resource Center",
+      category: "Government & Incident Response",
+      description: "United States Cybersecurity & Infrastructure Security Agency (CISA) dedicated ransomware guidance and alerts.",
+      url: "https://www.cisa.gov/stopransomware",
+      badge: "CISA"
+    },
+    {
+      title: "CISA #StopRansomware Guide",
+      category: "Best Practices Guide",
+      description: "Joint cybersecurity guidance for ransomware prevention, response, and incident remediation checklists.",
+      url: "https://www.cisa.gov/stopransomware/ransomware-guide",
+      badge: "CISA Guide"
+    },
+    {
+      title: "Microsoft Ransomware Incident Response",
+      category: "Vendor Playbook",
+      description: "Microsoft Security playbooks, detection guidance, and defense against human-operated and automated ransomware.",
+      url: "https://learn.microsoft.com/en-us/security/operations/incident-response-playbook-ransomware",
+      badge: "Microsoft"
+    },
+    {
+      title: "NIST SP 800-86 Forensic Techniques Guide",
+      category: "Standard Forensic Framework",
+      description: "Guide to Integrating Forensic Techniques into Incident Response by the National Institute of Standards and Technology.",
+      url: "https://csrc.nist.gov/pubs/sp/800/86/final",
+      badge: "NIST"
+    }
+  ];
 
   /*
    * ---------------------------------------------------------
@@ -922,8 +1233,49 @@ export default function Report() {
 
         <div className="report-actions no-print">
           <button
+            className="report-ai-button"
+            onClick={() => fetchRecommendations(selectedEvidenceId)}
+            disabled={recommendationsLoading}
+            title="Generate AI-powered incident response recommendations"
+          >
+            <Sparkles size={16} className={recommendationsLoading ? "loading-spin" : ""} />
+            {recommendationsLoading ? "Analyzing Findings..." : "Get AI Recommendations"}
+          </button>
+
+          <button
+            className="report-secondary-button"
+            onClick={downloadPdf}
+            disabled={downloadingPdf}
+            title="Download formal forensic PDF investigation report"
+          >
+            <Download size={16} />
+            {downloadingPdf ? "Generating PDF..." : "Download PDF"}
+          </button>
+
+          <button
+            className="report-secondary-button"
+            onClick={downloadJson}
+            disabled={downloadingJson}
+            title="Export structured forensic report data in JSON format"
+          >
+            <FileCode size={16} />
+            {downloadingJson ? "Exporting JSON..." : "Export JSON"}
+          </button>
+
+          <button
+            className="report-secondary-button"
+            onClick={downloadEvidenceLog}
+            disabled={downloadingLog}
+            title="Export digital evidence integrity and chain-of-custody verification log"
+          >
+            <Database size={16} />
+            {downloadingLog ? "Exporting Log..." : "Evidence Log"}
+          </button>
+
+          <button
             className="report-secondary-button"
             onClick={refreshReport}
+            title="Refresh case metadata and forensic analysis"
           >
             <RefreshCw size={16} />
             Refresh
@@ -932,6 +1284,7 @@ export default function Report() {
           <button
             className="report-primary-button"
             onClick={printReport}
+            title="Open browser print dialog"
           >
             <Printer size={16} />
             Print / Save PDF
@@ -1532,12 +1885,94 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          06 RULE BASED DETECTION
+          06 INDICATORS OF COMPROMISE (IOCs)
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
           number="06"
+          title="Indicators of Compromise (IOCs)"
+          description="Extracted forensic indicators, hashes, detection artifacts, and suspicious executions."
+          icon={<ShieldAlert size={20} />}
+        />
+
+        <div className="three-metric-grid">
+          <MetricCard
+            icon={<ShieldAlert size={20} />}
+            label="Total Extracted IOCs"
+            value={formatNumber(extractedIocs.length)}
+          />
+          <MetricCard
+            icon={<AlertTriangle size={20} />}
+            label="High-Severity IOCs"
+            value={formatNumber(
+              extractedIocs.filter((i) => i.severity === "HIGH").length
+            )}
+          />
+          <MetricCard
+            icon={<Fingerprint size={20} />}
+            label="Evidence SHA-256"
+            value={getIntegrityText(integrity)}
+          />
+        </div>
+
+        <div className="report-table-wrapper">
+          <table className="report-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Indicator / Pattern</th>
+                <th>Context / Details</th>
+                <th>Severity</th>
+                <th>Source Plugin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {extractedIocs.length > 0 ? (
+                extractedIocs.map((ioc, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <span className="ioc-type-badge">{ioc.type}</span>
+                    </td>
+                    <td>
+                      <code className="ioc-indicator-code">{ioc.indicator}</code>
+                    </td>
+                    <td>{ioc.context}</td>
+                    <td>
+                      <span
+                        className={`table-badge ${
+                          ioc.severity === "HIGH"
+                            ? "detected"
+                            : ioc.severity === "MEDIUM"
+                            ? "warning-badge"
+                            : "info-badge"
+                        }`}
+                      >
+                        {ioc.severity}
+                      </span>
+                    </td>
+                    <td>{ioc.source}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5">
+                    No Indicators of Compromise were extracted for this evidence.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* =====================================================
+          07 RULE BASED DETECTION
+      ====================================================== */}
+
+      <section className="report-section">
+        <SectionHeader
+          number="07"
           title="Rule-Based Detection"
           description="Suspicious behavior identified by the forensic rule engine."
           icon={<AlertTriangle size={20} />}
@@ -1607,12 +2042,12 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          07 CORRELATION
+          08 CORRELATION
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
-          number="07"
+          number="08"
           title="Evidence Correlation"
           description="Relationships identified between independent forensic artifacts."
           icon={<Network size={20} />}
@@ -1690,12 +2125,12 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          08 MACHINE LEARNING
+          09 MACHINE LEARNING
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
-          number="08"
+          number="09"
           title="AI / Machine Learning Assessment"
           description="Automated classification based on extracted forensic features."
           icon={<Brain size={20} />}
@@ -1854,12 +2289,12 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          09 RISK ASSESSMENT
+          10 RISK ASSESSMENT
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
-          number="09"
+          number="10"
           title="Risk Assessment"
           description="Risk calculated from the available forensic indicators."
           icon={<AlertTriangle size={20} />}
@@ -1951,12 +2386,12 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          10 KEY FORENSIC FINDINGS
+          11 KEY FORENSIC FINDINGS
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
-          number="10"
+          number="11"
           title="Key Forensic Findings"
           description="Most relevant findings identified during the investigation."
           icon={<AlertTriangle size={20} />}
@@ -2031,12 +2466,287 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          11 CONCLUSION
+          12 AI-POWERED FORENSIC RECOMMENDATIONS
+      ====================================================== */}
+
+      <section className="report-section ai-recommendations-section">
+        <div className="ai-section-topline">
+          <SectionHeader
+            number="12"
+            title="AI-Powered Forensic Recommendations & Incident Response Guidance"
+            description="Intelligent mitigation strategies, containment actions, and MITRE ATT&CK mapping grounded in verified evidence."
+            icon={<Sparkles size={20} className="sparkles-icon" />}
+          />
+          <div className="ai-header-actions no-print">
+            <button
+              className="report-ai-button-secondary"
+              onClick={() => fetchRecommendations(selectedEvidenceId)}
+              disabled={recommendationsLoading}
+              title="Regenerate forensic recommendations from current evidence"
+            >
+              <RefreshCw size={14} className={recommendationsLoading ? "loading-spin" : ""} />
+              {recommendationsLoading ? "Analyzing..." : "Refresh Recommendations"}
+            </button>
+          </div>
+        </div>
+
+        {/* Attribution & Status Badge */}
+        <div className="ai-provider-banner">
+          <div className="provider-status-line">
+            <span
+              className={`provider-badge ${
+                recommendations?.is_ai_generated ? "gemini" : "offline"
+              }`}
+            >
+              {recommendations?.is_ai_generated ? (
+                <>
+                  <Sparkles size={14} /> Google Gemini AI (Grounded in Verified Findings)
+                </>
+              ) : (
+                <>
+                  <Activity size={14} />{" "}
+                  {recommendations?.provider ||
+                    "Forensic Rule Engine (Offline Guidance - GEMINI_API_KEY not configured)"}
+                </>
+              )}
+            </span>
+            <span className="provider-meta">
+              Evidence: <strong>{evidenceId}</strong> | Integrity:{" "}
+              <strong>{getIntegrityText(integrity)}</strong>
+            </span>
+          </div>
+
+          <div className="ai-disclaimer-card">
+            <AlertTriangle size={16} />
+            <p>
+              <strong>FORENSIC NOTICE:</strong>{" "}
+              {recommendations?.disclaimer ||
+                "Verified forensic findings (evidence integrity, hashes, YARA detections, and timeline events) are empirical digital evidence. The recommendations below are advisory guidance to assist the assigned investigator and do not execute automated modifications on the investigated system."}
+            </p>
+          </div>
+        </div>
+
+        {recommendationsLoading && (
+          <div className="ai-loading-box">
+            <RefreshCw size={24} className="loading-spin" />
+            <p>Evaluating verified forensic findings and compiling DFIR recommendations...</p>
+          </div>
+        )}
+
+        {recommendationError && (
+          <div className="report-error no-print">
+            <AlertTriangle size={18} />
+            <span>{recommendationError}</span>
+          </div>
+        )}
+
+        {recommendations && (
+          <>
+            {/* Executive Summary Card */}
+            <div className="ai-content-card">
+              <div className="ai-card-title">
+                <FileText size={18} />
+                <h3>Executive Incident Summary</h3>
+              </div>
+              <p className="ai-summary-text">{recommendations.executive_summary}</p>
+            </div>
+
+            {/* Observed Findings */}
+            {safeArray(recommendations.observed_findings).length > 0 && (
+              <div className="ai-content-card">
+                <div className="ai-card-title">
+                  <CheckCircle2 size={18} />
+                  <h3>Empirically Observed Forensic Facts</h3>
+                </div>
+                <ul className="ai-bullet-list">
+                  {recommendations.observed_findings.map((finding, idx) => (
+                    <li key={idx}>{finding}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Risk Interpretation */}
+            {recommendations.risk_interpretation && (
+              <div className="ai-content-card">
+                <div className="ai-card-title">
+                  <AlertTriangle size={18} />
+                  <h3>Risk Interpretation</h3>
+                </div>
+                <p className="ai-summary-text">{recommendations.risk_interpretation}</p>
+              </div>
+            )}
+
+            {/* Tactical Playbook Grid: Immediate, Containment, Further Steps, Recovery */}
+            <div className="ai-playbook-grid">
+              <div className="playbook-column immediate">
+                <div className="playbook-title">
+                  <ShieldAlert size={18} />
+                  <h4>Immediate Tactical Response</h4>
+                </div>
+                <ul className="playbook-list">
+                  {safeArray(recommendations.immediate_response).map((item, idx) => (
+                    <li key={idx}>
+                      <span className="step-num">{idx + 1}</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="playbook-column containment">
+                <div className="playbook-title">
+                  <LockKeyhole size={18} />
+                  <h4>Containment & Isolation</h4>
+                </div>
+                <ul className="playbook-list">
+                  {safeArray(recommendations.containment_guidance).map((item, idx) => (
+                    <li key={idx}>
+                      <span className="step-num">{idx + 1}</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="playbook-column investigation">
+                <div className="playbook-title">
+                  <Search size={18} />
+                  <h4>Further Forensic Steps</h4>
+                </div>
+                <ul className="playbook-list">
+                  {safeArray(recommendations.further_forensic_steps).map((item, idx) => (
+                    <li key={idx}>
+                      <span className="step-num">{idx + 1}</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="playbook-column recovery">
+                <div className="playbook-title">
+                  <ListChecks size={18} />
+                  <h4>Remediation & Recovery</h4>
+                </div>
+                <ul className="playbook-list">
+                  {safeArray(recommendations.recovery_recommendations).map((item, idx) => (
+                    <li key={idx}>
+                      <span className="step-num">{idx + 1}</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* MITRE ATT&CK Matrix */}
+            {safeArray(recommendations.mitre_attack).length > 0 && (
+              <div className="ai-content-card">
+                <div className="ai-card-title">
+                  <Network size={18} />
+                  <h3>MITRE ATT&CK Framework Mapping</h3>
+                </div>
+                <div className="report-table-wrapper">
+                  <table className="report-table mitre-table">
+                    <thead>
+                      <tr>
+                        <th>Technique ID</th>
+                        <th>Technique Name</th>
+                        <th>Tactic</th>
+                        <th>Relevance to Findings</th>
+                        <th>Recommended Mitigation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recommendations.mitre_attack.map((m, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            <a
+                              href={`https://attack.mitre.org/techniques/${m.technique_id.replace(
+                                ".",
+                                "/"
+                              )}/`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mitre-link"
+                            >
+                              {m.technique_id}
+                              <ExternalLink size={12} />
+                            </a>
+                          </td>
+                          <td>
+                            <strong>{m.technique_name}</strong>
+                          </td>
+                          <td>
+                            <span className="tactic-badge">{m.tactic}</span>
+                          </td>
+                          <td>{m.relevance}</td>
+                          <td>{m.mitigation}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Limitations & Confidence */}
+            {recommendations.limitations_and_confidence && (
+              <div className="ai-content-card limitations-card">
+                <div className="ai-card-title">
+                  <ShieldCheck size={18} />
+                  <h3>Confidence Level & Analytical Limitations</h3>
+                </div>
+                <p>{recommendations.limitations_and_confidence}</p>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {/* =====================================================
+          13 EXTERNAL SECURITY RESOURCES
+      ====================================================== */}
+
+      <section className="report-section external-resources-section">
+        <SectionHeader
+          number="13"
+          title="External Security Resources & Authoritative Guidance"
+          description="Direct links to authoritative digital forensics, ransomware playbooks, and mitigation documentation."
+          icon={<ExternalLink size={20} />}
+        />
+
+        <div className="external-resources-grid">
+          {securityResources.map((res, idx) => (
+            <div className="resource-card" key={idx}>
+              <div className="resource-header">
+                <span className="resource-badge">{res.badge}</span>
+                <span className="resource-category">{res.category}</span>
+              </div>
+              <h4 className="resource-title">{res.title}</h4>
+              <p className="resource-desc">{res.description}</p>
+              <a
+                href={res.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="resource-link-btn"
+              >
+                Access Resource
+                <ExternalLink size={14} />
+              </a>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* =====================================================
+          14 CONCLUSION
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
-          number="11"
+          number="14"
           title="Investigation Conclusion"
           description="Evidence-specific summary generated from the completed investigation."
           icon={<FileText size={20} />}
@@ -2096,12 +2806,12 @@ export default function Report() {
       </section>
 
       {/* =====================================================
-          12 INVESTIGATOR VERIFICATION
+          15 INVESTIGATOR VERIFICATION
       ====================================================== */}
 
       <section className="report-section">
         <SectionHeader
-          number="12"
+          number="15"
           title="Investigator Verification"
           description="Final investigation identification and verification details."
           icon={<LockKeyhole size={20} />}

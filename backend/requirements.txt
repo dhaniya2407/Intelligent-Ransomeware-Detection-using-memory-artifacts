@@ -7,3 +7,4 @@ passlib
 yara-python
 pandas
 joblib
+reportlab
