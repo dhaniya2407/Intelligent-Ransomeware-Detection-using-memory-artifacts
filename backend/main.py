@@ -882,6 +882,31 @@ def get_evidence(
 
 
 # ============================================================
+# RESOLVE EVIDENCE FILE PATH
+# ============================================================
+
+def resolve_evidence_file_path(evidence: Evidence) -> str:
+    """
+    Dynamically locate the evidence file on disk across local and cloud environments.
+    """
+    if evidence.file_path and os.path.isfile(evidence.file_path):
+        return evidence.file_path
+
+    candidates = [
+        os.path.join(PROJECT_ROOT, "evidence", os.path.basename(evidence.file_path or "")),
+        os.path.join(PROJECT_ROOT, "evidence", f"{evidence.evidence_id}_{evidence.filename}"),
+        os.path.join(PROJECT_ROOT, "evidence", evidence.filename),
+        os.path.join(PROJECT_ROOT, "backend", "evidence", os.path.basename(evidence.file_path or "")),
+        os.path.join(PROJECT_ROOT, "backend", "evidence", f"{evidence.evidence_id}_{evidence.filename}"),
+        os.path.join(PROJECT_ROOT, "backend", "evidence", evidence.filename),
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    return evidence.file_path or ""
+
+
+# ============================================================
 # VERIFY EVIDENCE SHA-256
 # ============================================================
 
@@ -904,9 +929,9 @@ def verify_evidence(
             detail="Evidence not found"
         )
 
-    if not os.path.exists(
-        evidence.file_path
-    ):
+    resolved_path = resolve_evidence_file_path(evidence)
+
+    if not os.path.exists(resolved_path):
 
         return {
 
@@ -917,14 +942,14 @@ def verify_evidence(
                 "ERROR",
 
             "message":
-                "Evidence file not found"
+                f"Evidence file not found on disk: {evidence.filename}"
         }
 
     # Calculate hash
     sha256_hash = hashlib.sha256()
 
     with open(
-        evidence.file_path,
+        resolved_path,
         "rb"
     ) as file:
 
@@ -1720,18 +1745,18 @@ def full_memory_analysis(
         )
 
     # --------------------------------------------------------
-    # 2. CHECK FILE
+    # 2. CHECK FILE & RESOLVE PATH
     # --------------------------------------------------------
 
-    if not os.path.exists(
-        evidence.file_path
-    ):
+    resolved_path = resolve_evidence_file_path(evidence)
+
+    if not os.path.exists(resolved_path):
 
         raise HTTPException(
             status_code=404,
             detail=(
-                f"Evidence file not found: "
-                f"{evidence.file_path}"
+                f"Evidence file not found on disk: {evidence.filename}. "
+                f"For local analysis, please verify the file exists in the evidence folder."
             )
         )
 
@@ -1742,7 +1767,7 @@ def full_memory_analysis(
     sha256_hash = hashlib.sha256()
 
     with open(
-        evidence.file_path,
+        resolved_path,
         "rb"
     ) as file:
 
@@ -1804,7 +1829,7 @@ def full_memory_analysis(
     )
 
     volatility_results = analyze_memory(
-        evidence.file_path
+        resolved_path
     )
 
     # --------------------------------------------------------
@@ -1844,30 +1869,28 @@ def full_memory_analysis(
 # --------------------------------------------------------
 
     for name, result in volatility_results.get(
-    "plugins",
-    {}
+        "plugins",
+        {}
     ).items():
 
-           output_file = os.path.join(
-        analysis_folder,
-        f"{evidence_id}_{name}.txt"
-    )
+        output_file = os.path.join(
+            analysis_folder,
+            f"{evidence_id}_{name}.txt"
+        )
 
-    if result.get("success"):
-
-        with open(
-            output_file,
-            "w",
-            encoding="utf-8",
-            errors="ignore"
-        ) as file:
-
-            file.write(
-                result.get(
-                    "raw_output",
-                    ""
+        if result.get("success"):
+            with open(
+                output_file,
+                "w",
+                encoding="utf-8",
+                errors="ignore"
+            ) as file:
+                file.write(
+                    result.get(
+                        "raw_output",
+                        ""
+                    )
                 )
-            )
 
     # --------------------------------------------------------
     # 8. PARSE FORENSIC RESULTS
@@ -1878,7 +1901,9 @@ def full_memory_analysis(
     )
 
     events = parse_all_results(
-        evidence_id)
+        evidence_id,
+        raw_results_dict=volatility_results.get("plugins", {})
+    )
 
     print(
         f"Parsed events: {len(events)}"
@@ -2848,19 +2873,58 @@ def _load_report_evidence_and_analysis(evidence_id: str, db: Session) -> dict:
         AnalysisResult.created_at.desc()
     ).first()
 
-    if not complete_record:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No completed analysis found for evidence {evidence_id}. Please run Full Analysis first."
-        )
-
-    try:
-        complete_result = json.loads(complete_record.result)
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="Stored analysis result contains invalid JSON."
-        )
+    if complete_record:
+        try:
+            complete_result = json.loads(complete_record.result)
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail="Stored analysis result contains invalid JSON."
+            )
+    else:
+        # Check if individual sub-analysis records exist for partial reporting
+        sub_records = db.query(AnalysisResult).filter(
+            AnalysisResult.evidence_id == evidence_id
+        ).all()
+        if not sub_records:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No forensic analysis records found for evidence {evidence_id}. Please run analysis on the Analysis page first."
+            )
+        complete_result = {
+            "evidence": {
+                "evidence_id": evidence.evidence_id,
+                "case_id": evidence.case_id,
+                "filename": evidence.filename,
+                "sha256": evidence.sha256,
+                "status": evidence.status,
+                "integrity": "INTACT"
+            },
+            "volatility": {"status": "PARTIAL", "plugins": {}},
+            "forensics": {},
+            "timeline": [],
+            "analyzed_events": [],
+            "correlations": [],
+            "features": {},
+            "ml": {"classification": "Normal", "probabilities": {}},
+            "risk": {"risk_score": 0, "risk_level": "LOW", "reasons": []},
+            "yara": {"match_count": 0, "findings": []}
+        }
+        for rec in sub_records:
+            try:
+                p_val = json.loads(rec.result)
+                if rec.analysis_type == "volatility":
+                    complete_result["volatility"] = p_val
+                elif rec.analysis_type == "timeline":
+                    complete_result["timeline"] = p_val
+                elif rec.analysis_type == "correlation":
+                    complete_result["correlations"] = p_val
+                elif rec.analysis_type == "features":
+                    complete_result["features"] = p_val
+                elif rec.analysis_type == "risk":
+                    complete_result["risk"] = p_val
+            except Exception:
+                pass
 
     case_data = db.query(Case).filter(
         Case.case_id == evidence.case_id
@@ -3044,4 +3108,4 @@ async def serve_spa_app(full_path: str):
     if os.path.isfile(index_html):
         return FileResponse(index_html)
 
-    raise HTTPException(status_code=404, detail="Not Found")
+    raise HTTPException(status_code=404, detail="Not Found")

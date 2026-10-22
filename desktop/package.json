@@ -1,0 +1,45 @@
+{
+  "name": "forensiransom-ai-desktop",
+  "productName": "ForensiRansom AI",
+  "version": "1.0.0",
+  "description": "AI-Based Intelligent Ransomware Detection and Automated Digital Forensic Investigation",
+  "author": "Dhaniya",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package-win": "electron-packager . \"ForensiRansom AI\" --platform=win32 --arch=x64 --out=dist-electron --overwrite --asar --prune=true",
+    "pack": "npm run package-win",
+    "dist": "npm run package-win"
+  },
+  "build": {
+    "appId": "com.forensiransom.ai",
+    "productName": "ForensiRansom AI",
+    "copyright": "Copyright © 2026 ForensiRansom AI",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app-dist/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ForensiRansom AI"
+    }
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^34.5.8",
+    "electron-builder": "^25.1.8"
+  }
+}

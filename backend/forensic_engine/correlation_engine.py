@@ -1,11 +1,14 @@
 def correlate_events(analyzed_events):
 
     correlations = []
+    seen_descriptions = set()
 
     command_events = []
     process_events = []
     network_events = []
     relationship_events = []
+    memory_events = []
+    module_events = []
 
     # ---------------------------------
     # Separate event types
@@ -26,6 +29,12 @@ def correlate_events(analyzed_events):
 
         elif event_type == "PROCESS_RELATIONSHIP":
             relationship_events.append(event)
+
+        elif event_type == "MEMORY_REGION":
+            memory_events.append(event)
+
+        elif event_type == "MODULE_LOAD":
+            module_events.append(event)
 
     # ---------------------------------
     # Correlation 1:
@@ -64,7 +73,9 @@ def correlate_events(analyzed_events):
                 "wscript.exe",
                 "cscript.exe",
                 "mshta.exe",
-                "rundll32.exe"
+                "rundll32.exe",
+                "vssadmin.exe",
+                "certutil.exe"
             ]
 
             for process_name in common_processes:
@@ -73,23 +84,15 @@ def correlate_events(analyzed_events):
                     process_name in command_lower
                     and process_name in process_lower
                 ):
-
-                    correlations.append({
-                        "correlation_type":
-                            "PROCESS_COMMAND_CORRELATION",
-
-                        "description":
-                            f"{process_name} was observed "
-                            "in both process and command-line artifacts.",
-
-                        "severity":
-                            "HIGH",
-
-                        "evidence": [
-                            command,
-                            process
-                        ]
-                    })
+                    desc = f"{process_name} was observed in both process and command-line artifacts."
+                    if desc not in seen_descriptions:
+                        seen_descriptions.add(desc)
+                        correlations.append({
+                            "correlation_type": "PROCESS_COMMAND_CORRELATION",
+                            "description": desc,
+                            "severity": "HIGH",
+                            "evidence": [command, process]
+                        })
 
     # ---------------------------------
     # Correlation 2:
@@ -103,23 +106,15 @@ def correlate_events(analyzed_events):
 
         for network in network_events:
 
-            correlations.append({
-                "correlation_type":
-                    "COMMAND_NETWORK_CORRELATION",
-
-                "description":
-                    "Command-line activity and network "
-                    "artifacts were observed in the "
-                    "same forensic investigation.",
-
-                "severity":
-                    "MEDIUM",
-
-                "evidence": [
-                    command,
-                    network
-                ]
-            })
+            desc = "Command-line activity and network artifacts were observed in the same forensic investigation."
+            if desc not in seen_descriptions:
+                seen_descriptions.add(desc)
+                correlations.append({
+                    "correlation_type": "COMMAND_NETWORK_CORRELATION",
+                    "description": desc,
+                    "severity": "MEDIUM",
+                    "evidence": [command, network]
+                })
 
     # ---------------------------------
     # Correlation 3:
@@ -130,20 +125,50 @@ def correlate_events(analyzed_events):
 
         if relationship.get("rule_score", 0) > 0:
 
-            correlations.append({
-                "correlation_type":
-                    "PROCESS_RELATIONSHIP_CORRELATION",
+            desc = f"A process relationship contains an indicator requiring investigation: {relationship.get('indicators', ['Anomalous process tree'])[0]}"
+            if desc not in seen_descriptions:
+                seen_descriptions.add(desc)
+                correlations.append({
+                    "correlation_type": "PROCESS_RELATIONSHIP_CORRELATION",
+                    "description": desc,
+                    "severity": "MEDIUM",
+                    "evidence": [relationship]
+                })
 
-                "description":
-                    "A process relationship contains "
-                    "an indicator requiring investigation.",
+    # ---------------------------------
+    # Correlation 4:
+    # Recovery tampering & Inhibition (T1490)
+    # ---------------------------------
 
-                "severity":
-                    "MEDIUM",
+    for command in command_events:
+        c_raw = command.get("evidence", {}).get("raw_data", "").lower()
+        if any(keyword in c_raw for keyword in ["vssadmin delete", "shadowcopy delete", "wbadmin delete", "recoveryenabled no"]):
+            desc = "System recovery inhibition (shadow copy deletion/bcdedit tampering) correlated with active process execution."
+            if desc not in seen_descriptions:
+                seen_descriptions.add(desc)
+                correlations.append({
+                    "correlation_type": "RECOVERY_TAMPERING_CORRELATION",
+                    "description": desc,
+                    "severity": "CRITICAL",
+                    "evidence": [command]
+                })
 
-                "evidence": [
-                    relationship
-                ]
-            })
+    # ---------------------------------
+    # Correlation 5:
+    # RWX Memory page + Scripting execution (T1055)
+    # ---------------------------------
+
+    for mem in memory_events:
+        m_raw = mem.get("evidence", {}).get("raw_data", "")
+        if "PAGE_EXECUTE_READWRITE" in m_raw or "EXECUTE_READWRITE" in m_raw:
+            desc = "Executable/Writable (RWX) VAD memory allocation identified during memory triage (potential shellcode/injected payload)."
+            if desc not in seen_descriptions:
+                seen_descriptions.add(desc)
+                correlations.append({
+                    "correlation_type": "PROCESS_MEMORY_CORRELATION",
+                    "description": desc,
+                    "severity": "HIGH",
+                    "evidence": [mem]
+                })
 
     return correlations

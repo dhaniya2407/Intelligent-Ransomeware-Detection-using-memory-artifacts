@@ -59,7 +59,7 @@ class NumberedCanvas(canvas.Canvas):
             self.setStrokeColor(colors.HexColor("#D0D5DD"))
             self.setLineWidth(0.5)
             self.line(36, 756, 576, 756)
-            self.drawString(36, 760, "ForensiRansom AI — Digital Forensic Investigation Report")
+            self.drawString(36, 760, "ForensiRansom AI - Digital Forensic Investigation Report")
             self.drawRightString(576, 760, f"Confidential & Privileged")
 
         # Footer
@@ -67,7 +67,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setLineWidth(0.5)
         self.line(36, 42, 576, 42)
         
-        footer_left = "ForensiRansom AI — Automated Ransomware Forensics & Digital Investigation Platform"
+        footer_left = "ForensiRansom AI - Automated Ransomware Forensics & Digital Investigation Platform"
         footer_right = f"Page {self._pageNumber} of {total_pages}"
         self.drawString(36, 30, footer_left)
         self.drawRightString(576, 30, footer_right)
@@ -240,7 +240,7 @@ def generate_evidence_log(analysis_data: Dict[str, Any]) -> Dict[str, Any]:
     evidence = analysis_data.get("evidence", {})
 
     return {
-        "log_title": "ForensiRansom AI — Digital Evidence Verification Log",
+        "log_title": "ForensiRansom AI - Digital Evidence Verification Log",
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "case_id": case.get("case_id", "Not recorded"),
         "case_name": case.get("case_name", "Not recorded"),
@@ -405,7 +405,7 @@ def generate_pdf_report(analysis_data: Dict[str, Any], recommendations: Optional
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#102f5f'), spaceBefore=4, spaceAfter=8))
 
     story.append(Paragraph("DIGITAL FORENSIC INVESTIGATION REPORT", title_style))
-    story.append(Paragraph(f"Comprehensive forensic examination for Case <b>{case_id}</b> — Evidence <b>{evidence_id}</b>", subtitle_style))
+    story.append(Paragraph(f"Comprehensive forensic examination for Case <b>{case_id}</b> - Evidence <b>{evidence_id}</b>", subtitle_style))
 
     # ========================================================
     # SECTION 1: CASE & INVESTIGATION METADATA

@@ -1,4 +1,3 @@
-
 def create_timeline_event(
     event_type,
     what,
@@ -157,6 +156,53 @@ def build_timeline(events):
                     ),
                     source=source,
                     severity="MEDIUM",
+                    evidence={
+                        "raw_data": raw_data
+                    }
+                )
+            )
+
+        # ---------------------------------
+        # MODULE & DLL EVENTS
+        # ---------------------------------
+
+        elif event_type == "MODULE_LOAD":
+
+            timeline.append(
+                create_timeline_event(
+                    event_type="MODULE_LOAD",
+                    what="Dynamic Link Library (DLL) loaded by process.",
+                    why=(
+                        "Loaded libraries reveal module dependencies, potential DLL search-order hijacking, "
+                        "and cryptographic or networking capabilities."
+                    ),
+                    source=source,
+                    severity="INFO",
+                    evidence={
+                        "raw_data": raw_data
+                    }
+                )
+            )
+
+        # ---------------------------------
+        # MEMORY REGION (VAD) EVENTS
+        # ---------------------------------
+
+        elif event_type == "MEMORY_REGION":
+
+            is_rwx = event.get("metadata", {}).get("is_rwx", False) or "PAGE_EXECUTE_READWRITE" in raw_data
+            timeline.append(
+                create_timeline_event(
+                    event_type="MEMORY_REGION",
+                    what="Executable memory allocation observed in process VAD.",
+                    why=(
+                        "Executable and writable (RWX) memory pages frequently host injected shellcode, "
+                        "unpacked payloads, or reflective DLLs."
+                        if is_rwx else
+                        "Memory page protections indicate loaded code sections and potential code injection."
+                    ),
+                    source=source,
+                    severity="HIGH" if is_rwx else "INFO",
                     evidence={
                         "raw_data": raw_data
                     }

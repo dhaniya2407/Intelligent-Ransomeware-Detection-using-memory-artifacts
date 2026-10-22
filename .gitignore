@@ -45,13 +45,16 @@ reports/*
 !reports/.gitkeep
 
 # ============================================================
-# Frontend & Node
+# Frontend & Node & Desktop
 # ============================================================
 node_modules/
 frontend/node_modules/
+desktop/node_modules/
 dist/
 frontend/dist/
 frontend/.vite/
+desktop/dist-electron/
+desktop-dist/
 
 # ============================================================
 # Logs & Environment

@@ -335,6 +335,8 @@ def generate_offline_recommendations(sanitized: Dict[str, Any], reason: str = ""
         "is_ai_generated": False,
         "provider": provider_label,
         "status": "offline_fallback",
+        "requires_investigator_approval": True,
+        "review_status": "Pending Review",
         "executive_summary": exec_summary,
         "observed_findings": observed,
         "risk_interpretation": risk_interp,
@@ -359,10 +361,11 @@ def generate_offline_recommendations(sanitized: Dict[str, Any], reason: str = ""
 
 def call_gemini_api(api_key: str, sanitized_findings: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Calls Google Gemini REST API using standard Python urllib.
+    Calls Google Gemini REST API using standard Python urllib with multi-model fallback.
     Zero external dependencies required.
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    last_error = None
 
     prompt_text = f"""You are an elite Digital Forensics and Incident Response (DFIR) AI expert assisting with a ransomware forensic investigation.
 You are given VERIFIED digital forensic findings extracted from a memory image.
@@ -372,7 +375,7 @@ FORENSIC EVIDENCE & ANALYSIS DATA:
 
 TASK:
 Provide professional, actionable, and strictly grounded forensic recommendations.
-DO NOT fabricate evidence or unobserved malware families.
+DO NOT fabricate evidence, process IDs, or unobserved malware families.
 Differentiate factual forensic findings from your analytical recommendations.
 
 You MUST respond ONLY with a valid JSON object (no markdown code blocks, no other text) with the following exact keys:
@@ -411,64 +414,71 @@ You MUST respond ONLY with a valid JSON object (no markdown code blocks, no othe
             "responseMimeType": "application/json"
         }
     }
-
     req_data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=req_data,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
 
-    with urllib.request.urlopen(req, timeout=18) as response:
-        resp_data = json.loads(response.read().decode("utf-8"))
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
 
-    # Extract text from Gemini response structure
-    candidates = resp_data.get("candidates", [])
-    if not candidates:
-        raise ValueError("No candidates returned from Gemini API")
+            with urllib.request.urlopen(req, timeout=18) as response:
+                resp_data = json.loads(response.read().decode("utf-8"))
 
-    content_parts = candidates[0].get("content", {}).get("parts", [])
-    if not content_parts:
-        raise ValueError("No content parts returned from Gemini API")
+            candidates = resp_data.get("candidates", [])
+            if not candidates:
+                continue
 
-    raw_text = content_parts[0].get("text", "").strip()
+            content_parts = candidates[0].get("content", {}).get("parts", [])
+            if not content_parts:
+                continue
 
-    # Clean potential markdown wrapping if present
-    if raw_text.startswith("```json"):
-        raw_text = raw_text[7:]
-    elif raw_text.startswith("```"):
-        raw_text = raw_text[3:]
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3]
-    raw_text = raw_text.strip()
+            raw_text = content_parts[0].get("text", "").strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            elif raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+            raw_text = raw_text.strip()
 
-    parsed = json.loads(raw_text)
+            parsed = json.loads(raw_text)
 
-    # Ensure all required keys exist
-    return {
-        "is_ai_generated": True,
-        "provider": "Google Gemini 1.5 Flash (AI-Assisted DFIR)",
-        "status": "success",
-        "executive_summary": parsed.get("executive_summary", "Executive summary unavailable."),
-        "observed_findings": parsed.get("observed_findings", []),
-        "risk_interpretation": parsed.get("risk_interpretation", "Risk interpretation unavailable."),
-        "immediate_response": parsed.get("immediate_response", []),
-        "containment_guidance": parsed.get("containment_guidance", []),
-        "further_forensic_steps": parsed.get("further_forensic_steps", []),
-        "recovery_recommendations": parsed.get("recovery_recommendations", []),
-        "mitre_attack": parsed.get("mitre_attack", []),
-        "limitations_and_confidence": parsed.get(
-            "limitations_and_confidence",
-            "Confidence is based on provided digital forensic findings."
-        ),
-        "external_resources": SECURITY_RESOURCES,
-        "disclaimer": (
-            "NOTICE: Verified forensic findings (evidence integrity, hashes, YARA matches, and timeline events) "
-            "are empirical digital artifacts. The recommendations above were generated by Google Gemini AI "
-            "as guidance for the investigator. Human verification is required prior to taking production actions."
-        )
-    }
+            return {
+                "is_ai_generated": True,
+                "provider": f"Google Gemini ({model} - AI-Assisted DFIR)",
+                "status": "success",
+                "requires_investigator_approval": True,
+                "review_status": "Pending Review",
+                "executive_summary": parsed.get("executive_summary", "Executive summary unavailable."),
+                "observed_findings": parsed.get("observed_findings", []),
+                "risk_interpretation": parsed.get("risk_interpretation", "Risk interpretation unavailable."),
+                "immediate_response": parsed.get("immediate_response", []),
+                "containment_guidance": parsed.get("containment_guidance", []),
+                "further_forensic_steps": parsed.get("further_forensic_steps", []),
+                "recovery_recommendations": parsed.get("recovery_recommendations", []),
+                "mitre_attack": parsed.get("mitre_attack", []),
+                "limitations_and_confidence": parsed.get(
+                    "limitations_and_confidence",
+                    "Confidence is based on provided digital forensic findings."
+                ),
+                "external_resources": SECURITY_RESOURCES,
+                "disclaimer": (
+                    "NOTICE: Verified forensic findings (evidence integrity, hashes, YARA matches, and timeline events) "
+                    "are empirical digital artifacts. The recommendations above were generated by Google Gemini AI "
+                    "as guidance for the investigator. Human verification is required prior to taking production actions."
+                )
+            }
+        except Exception as e:
+            last_error = e
+            logger.info("Gemini model %s failed: %s. Trying fallback model...", model, e)
+            continue
+
+    raise last_error or RuntimeError("All Gemini models failed")
 
 
 def get_recommendations(analysis_data: Dict[str, Any]) -> Dict[str, Any]:
