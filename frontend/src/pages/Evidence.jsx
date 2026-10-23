@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, authFetch } from "../config";
 
 function Evidence() {
   const navigate = useNavigate();
@@ -27,7 +27,7 @@ function Evidence() {
 
   const fetchCases = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/cases`);
+      const response = await authFetch(`${API_BASE_URL}/cases`);
 
       if (!response.ok) {
         throw new Error("Failed to load cases.");
@@ -51,7 +51,7 @@ function Evidence() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(`${API_BASE_URL}/evidence`);
+      const response = await authFetch(`${API_BASE_URL}/evidence`);
 
       if (!response.ok) {
         throw new Error("Failed to load evidence.");
@@ -146,7 +146,7 @@ function Evidence() {
       uploadData.append("case_id", formData.caseId);
       uploadData.append("file", selectedFile);
 
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE_URL}/evidence/upload?case_id=${encodeURIComponent(
           formData.caseId
         )}`,

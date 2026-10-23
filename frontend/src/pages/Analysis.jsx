@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 
 import "./Analysis.css";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, authFetch } from "../config";
 
 const PAGE_SIZE = 15;
 
@@ -287,8 +287,7 @@ function Analysis() {
     try {
       setLoadingEvidence(true);
 
-      const response = await fetch(
-        `${API_BASE_URL}/evidence`
+      const response = await authFetch(`${API_BASE_URL}/evidence`
       );
 
       if (!response.ok) {
@@ -380,8 +379,7 @@ function Analysis() {
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/analysis/status/${id}`
+      const response = await authFetch(`${API_BASE_URL}/analysis/status/${id}`
       );
 
       if (!response.ok) {
@@ -418,8 +416,7 @@ function Analysis() {
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/analysis/results/${id}`
+      const response = await authFetch(`${API_BASE_URL}/analysis/results/${id}`
       );
 
       if (response.status === 404) {
@@ -496,8 +493,7 @@ function Analysis() {
       setError("");
       setSuccessMessage("");
 
-      const response = await fetch(
-        `${API_BASE_URL}/analysis/full/${evidenceId}`,
+      const response = await authFetch(`${API_BASE_URL}/analysis/full/${evidenceId}`,
         {
           method: "POST",
         }

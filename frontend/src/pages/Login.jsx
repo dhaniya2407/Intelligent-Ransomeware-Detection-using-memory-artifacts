@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Shield, Lock, User, UserPlus } from "lucide-react";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, setAuthSession } from "../config";
 
 function Login() {
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ function Login() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            username: username,
+            username: username.trim(),
             password: password,
           }),
         }
@@ -30,7 +30,9 @@ function Login() {
       const data = await response.json();
 
       if (response.ok) {
-        localStorage.setItem("user", JSON.stringify(data));
+        setAuthSession(data.access_token, data.user);
+        localStorage.setItem("token", data.access_token);
+        localStorage.setItem("user", JSON.stringify(data.user));
         navigate("/dashboard");
       } else {
         alert(data.detail || "Invalid username or password");
@@ -52,12 +54,16 @@ function Login() {
           .login-page {
             width: 100%;
             min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             justify-content: center;
             align-items: center;
             background: linear-gradient(135deg, #17263c, #263d5b);
             padding: 30px;
             font-family: Arial, sans-serif;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
           }
 
           .login-card {
@@ -68,6 +74,8 @@ function Login() {
             padding: 55px 65px;
             text-align: center;
             box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+            margin: auto;
+            box-sizing: border-box;
           }
 
           .login-icon {
@@ -82,17 +90,24 @@ function Login() {
             justify-content: center;
           }
 
+          .login-icon svg {
+            width: 55px;
+            height: 55px;
+          }
+
           .login-title {
             font-size: 45px;
             font-weight: 700;
             color: #24364d;
             margin: 0 0 12px;
+            word-break: break-word;
           }
 
           .login-subtitle {
             font-size: 20px;
             color: #64748b;
             margin-bottom: 40px;
+            line-height: 1.4;
           }
 
           .login-field {
@@ -118,6 +133,7 @@ function Login() {
             border: 2px solid #cbd5e1;
             border-radius: 14px;
             background: #ffffff;
+            box-sizing: border-box;
           }
 
           .login-input:focus-within {
@@ -125,13 +141,19 @@ function Login() {
             box-shadow: 0 0 0 3px rgba(53,102,199,0.15);
           }
 
+          .login-input svg {
+            flex-shrink: 0;
+          }
+
           .login-input input {
             flex: 1;
+            min-width: 0;
             height: 100%;
             border: none;
             outline: none;
             font-size: 20px;
             color: #334155;
+            background: transparent;
           }
 
           .login-button {
@@ -145,6 +167,7 @@ function Login() {
             font-size: 22px;
             font-weight: 700;
             cursor: pointer;
+            transition: background 0.2s ease;
           }
 
           .login-button:hover {
@@ -174,24 +197,274 @@ function Login() {
             gap: 8px;
           }
 
+          .register-button svg {
+            flex-shrink: 0;
+          }
+
           .security-text {
             margin-top: 30px;
             font-size: 17px;
             color: #94a3b8;
           }
 
-          @media (max-width: 700px) {
+          /* Tablet & medium screens */
+          @media (max-width: 768px) {
+            .login-page {
+              padding: 24px 16px;
+            }
+
             .login-card {
-              width: 95%;
-              padding: 40px 30px;
+              width: 100%;
+              max-width: 540px;
+              padding: 40px 32px;
+              border-radius: 24px;
+              margin: auto 0;
+            }
+
+            .login-icon {
+              width: 80px;
+              height: 80px;
+              margin-bottom: 16px;
+            }
+
+            .login-icon svg {
+              width: 44px;
+              height: 44px;
             }
 
             .login-title {
-              font-size: 35px;
+              font-size: 34px;
             }
 
             .login-subtitle {
+              font-size: 16px;
+              margin-bottom: 28px;
+            }
+
+            .login-field {
+              margin-bottom: 20px;
+            }
+
+            .login-field label {
               font-size: 17px;
+              margin-bottom: 8px;
+            }
+
+            .login-input {
+              height: 58px;
+              padding: 0 16px;
+              gap: 12px;
+              border-radius: 12px;
+            }
+
+            .login-input input {
+              font-size: 17px;
+            }
+
+            .login-button {
+              height: 58px;
+              font-size: 19px;
+              border-radius: 12px;
+            }
+
+            .register-area {
+              margin-top: 24px;
+            }
+
+            .register-area p {
+              font-size: 16px;
+              margin-bottom: 10px;
+            }
+
+            .register-button {
+              font-size: 17px;
+            }
+
+            .security-text {
+              margin-top: 24px;
+              font-size: 15px;
+            }
+          }
+
+          /* Mobile / Android screens (<= 480px, e.g. 430px, 390px, 360px) */
+          @media (max-width: 480px) {
+            .login-page {
+              padding: 16px 12px;
+              justify-content: flex-start;
+            }
+
+            .login-card {
+              width: 100%;
+              max-width: 100%;
+              padding: 28px 18px 24px;
+              border-radius: 20px;
+              margin: auto 0;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            }
+
+            .login-icon {
+              width: 64px;
+              height: 64px;
+              margin: 0 auto 14px;
+            }
+
+            .login-icon svg {
+              width: 34px;
+              height: 34px;
+            }
+
+            .login-title {
+              font-size: 26px;
+              letter-spacing: -0.5px;
+              margin: 0 0 8px;
+            }
+
+            .login-subtitle {
+              font-size: 14px;
+              margin-bottom: 22px;
+              line-height: 1.4;
+            }
+
+            .login-field {
+              margin-bottom: 16px;
+            }
+
+            .login-field label {
+              font-size: 14px;
+              margin-bottom: 6px;
+            }
+
+            .login-input {
+              height: 50px;
+              padding: 0 14px;
+              gap: 10px;
+              border-radius: 10px;
+            }
+
+            .login-input svg {
+              width: 20px;
+              height: 20px;
+            }
+
+            .login-input input {
+              font-size: 16px;
+            }
+
+            .login-button {
+              height: 50px;
+              font-size: 16px;
+              border-radius: 10px;
+              margin-top: 6px;
+            }
+
+            .register-area {
+              margin-top: 18px;
+            }
+
+            .register-area p {
+              font-size: 14px;
+              margin-bottom: 8px;
+            }
+
+            .register-button {
+              font-size: 15px;
+              gap: 6px;
+            }
+
+            .register-button svg {
+              width: 18px;
+              height: 18px;
+            }
+
+            .security-text {
+              margin-top: 18px;
+              font-size: 12px;
+            }
+          }
+
+          /* Small mobile screens (<= 360px, e.g. 320px) */
+          @media (max-width: 360px) {
+            .login-page {
+              padding: 12px 8px;
+            }
+
+            .login-card {
+              padding: 20px 12px 18px;
+              border-radius: 16px;
+            }
+
+            .login-icon {
+              width: 52px;
+              height: 52px;
+              margin: 0 auto 10px;
+            }
+
+            .login-icon svg {
+              width: 28px;
+              height: 28px;
+            }
+
+            .login-title {
+              font-size: 22px;
+            }
+
+            .login-subtitle {
+              font-size: 12px;
+              margin-bottom: 16px;
+            }
+
+            .login-field {
+              margin-bottom: 12px;
+            }
+
+            .login-field label {
+              font-size: 13px;
+              margin-bottom: 4px;
+            }
+
+            .login-input {
+              height: 44px;
+              padding: 0 10px;
+              gap: 8px;
+              border-radius: 8px;
+            }
+
+            .login-input svg {
+              width: 18px;
+              height: 18px;
+            }
+
+            .login-input input {
+              font-size: 15px;
+            }
+
+            .login-button {
+              height: 44px;
+              font-size: 15px;
+              border-radius: 8px;
+            }
+
+            .register-area {
+              margin-top: 14px;
+            }
+
+            .register-area p {
+              font-size: 13px;
+              margin-bottom: 6px;
+            }
+
+            .register-button {
+              font-size: 14px;
+            }
+
+            .register-button svg {
+              width: 16px;
+              height: 16px;
+            }
+
+            .security-text {
+              margin-top: 14px;
+              font-size: 11px;
             }
           }
         `}

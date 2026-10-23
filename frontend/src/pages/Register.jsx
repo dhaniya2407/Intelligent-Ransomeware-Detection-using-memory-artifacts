@@ -8,7 +8,7 @@ import {
   Users,
   ArrowLeft
 } from "lucide-react";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, setAuthSession } from "../config";
 
 import "./Register.css";
 
@@ -35,8 +35,8 @@ function Register() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            username,
-            email,
+            username: username.trim(),
+            email: email.trim(),
             password,
             role,
           }),
@@ -46,8 +46,15 @@ function Register() {
       const data = await response.json();
 
       if (response.ok) {
-        alert("Account created successfully!");
-        navigate("/");
+        if (data.access_token && data.user) {
+          setAuthSession(data.access_token, data.user);
+          localStorage.setItem("token", data.access_token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          navigate("/dashboard");
+        } else {
+          alert("Account created successfully! Please sign in.");
+          navigate("/");
+        }
       } else {
         setMessage(data.detail || "Registration failed");
       }

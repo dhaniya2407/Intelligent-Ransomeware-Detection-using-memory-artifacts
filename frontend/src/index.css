@@ -4,6 +4,17 @@
   box-sizing: border-box;
 }
 
+html, body {
+  width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
 body {
   font-family: Arial, sans-serif;
   background: #f4f6f9;

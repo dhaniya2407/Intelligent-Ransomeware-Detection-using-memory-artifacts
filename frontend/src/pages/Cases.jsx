@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, authFetch, getCurrentUser } from "../config";
 
 function Cases() {
 
@@ -26,7 +26,7 @@ function Cases() {
 
     description: "",
 
-    investigator: "",
+    investigator: getCurrentUser()?.username || "",
 
     status: "Open"
 
@@ -45,7 +45,7 @@ function Cases() {
 
       setError("");
 
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE_URL}/cases`
       );
 
@@ -157,7 +157,7 @@ function Cases() {
 
     try {
 
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE_URL}/cases`,
         {
           method: "POST",
@@ -248,7 +248,7 @@ function Cases() {
 
         description: "",
 
-        investigator: "",
+        investigator: getCurrentUser()?.username || "",
 
         status: "Open"
 

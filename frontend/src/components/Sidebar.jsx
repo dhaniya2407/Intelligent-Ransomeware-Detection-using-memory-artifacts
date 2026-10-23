@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
+  LogOut,
+  User as UserIcon,
   Folder,
   FileText,
   ScanSearch,
@@ -20,11 +22,26 @@ import {
   RENDER_PRODUCTION_URL,
   LOCAL_DEV_URL,
   getSavedBackendUrl,
-  setSavedBackendUrl
+  setSavedBackendUrl,
+  getCurrentUser,
+  clearAuthSession,
+  authFetch
 } from "../config";
 
 function Sidebar() {
   const [backendHealthy, setBackendHealthy] = useState(null);
+  const currentUser = getCurrentUser() || { username: "Investigator", role: "Investigator" };
+
+  const handleLogout = async () => {
+    try {
+      const target = API_BASE_URL ? `${API_BASE_URL}/auth/logout` : "/auth/logout";
+      await authFetch(target, { method: "POST" });
+    } catch {
+      // ignore
+    }
+    clearAuthSession();
+    window.location.href = "/";
+  };
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [customInput, setCustomInput] = useState("");
@@ -364,6 +381,51 @@ function Sidebar() {
           </div>
         </div>
       )}
+
+      {/* =========================
+          AUTHENTICATED USER PROFILE & LOGOUT
+      ========================== */}
+      <div
+        style={{
+          margin: "12px 14px",
+          padding: "10px 12px",
+          background: "rgba(255, 255, 255, 0.04)",
+          borderRadius: "8px",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          fontSize: "12px"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: "8px" }}>
+            <div style={{ fontWeight: 600, color: "#f8fafc", display: "flex", alignItems: "center", gap: "6px" }}>
+              <UserIcon size={14} style={{ color: "#38bdf8" }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{currentUser.username}</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+              {currentUser.role || "Investigator"}
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            title="Log out from session"
+            style={{
+              background: "rgba(239, 68, 68, 0.15)",
+              border: "1px solid rgba(239, 68, 68, 0.35)",
+              color: "#f87171",
+              padding: "4px 8px",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "11px",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+          >
+            <LogOut size={12} /> Sign Out
+          </button>
+        </div>
+      </div>
 
       {/* =========================
           SIDEBAR FOOTER

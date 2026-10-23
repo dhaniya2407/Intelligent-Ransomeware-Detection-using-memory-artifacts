@@ -8,8 +8,9 @@
   "scripts": {
     "start": "electron .",
     "package-win": "electron-packager . \"ForensiRansom AI\" --platform=win32 --arch=x64 --out=dist-electron --overwrite --asar --prune=true",
+    "build-installer": "electron-builder --win",
     "pack": "npm run package-win",
-    "dist": "npm run package-win"
+    "dist": "electron-builder --win"
   },
   "build": {
     "appId": "com.forensiransom.ai",

@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 
 import "./Report.css";
-import { API_BASE_URL } from "../config";
+import { API_BASE_URL, authFetch, getAuthToken } from "../config";
 
 function formatNumber(value) {
   const number = Number(value);
@@ -337,8 +337,8 @@ export default function Report() {
 
       const [evidenceResponse, casesResponse] =
         await Promise.all([
-          fetch(`${API_BASE_URL}/evidence`),
-          fetch(`${API_BASE_URL}/cases`),
+          authFetch(`${API_BASE_URL}/evidence`),
+          authFetch(`${API_BASE_URL}/cases`),
         ]);
 
       const evidenceData =
@@ -436,8 +436,7 @@ export default function Report() {
       setAnalysisLoading(true);
       setError("");
 
-      const response = await fetch(
-        `${API_BASE_URL}/analysis/results/${id}`
+      const response = await authFetch(`${API_BASE_URL}/analysis/results/${id}`
       );
 
       const data = await response.json();
@@ -471,8 +470,7 @@ export default function Report() {
       setRecommendationsLoading(true);
       setRecommendationError("");
 
-      const response = await fetch(
-        `${API_BASE_URL}/reports/recommendations/${id}`,
+      const response = await authFetch(`${API_BASE_URL}/reports/recommendations/${id}`,
         { method: "POST" }
       );
 
@@ -894,8 +892,7 @@ export default function Report() {
 
     try {
       setDownloadingPdf(true);
-      const res = await fetch(
-        `${API_BASE_URL}/reports/pdf/${selectedEvidenceId}`
+      const res = await authFetch(`${API_BASE_URL}/reports/pdf/${selectedEvidenceId}`
       );
 
       if (!res.ok) {
@@ -926,8 +923,7 @@ export default function Report() {
 
     try {
       setDownloadingJson(true);
-      const res = await fetch(
-        `${API_BASE_URL}/reports/json/${selectedEvidenceId}`
+      const res = await authFetch(`${API_BASE_URL}/reports/json/${selectedEvidenceId}`
       );
 
       if (res.ok) {
@@ -1004,8 +1000,7 @@ export default function Report() {
 
     try {
       setDownloadingLog(true);
-      const res = await fetch(
-        `${API_BASE_URL}/reports/evidence-log/${selectedEvidenceId}`
+      const res = await authFetch(`${API_BASE_URL}/reports/evidence-log/${selectedEvidenceId}`
       );
 
       if (res.ok) {

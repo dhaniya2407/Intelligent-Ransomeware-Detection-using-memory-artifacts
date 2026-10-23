@@ -48,7 +48,21 @@ if PROJECT_ROOT not in sys.path:
 # DATABASE / MODELS
 # ============================================================
 
+from sqlalchemy import func
 from database import engine, SessionLocal, Base
+
+from auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    get_current_user_from_request,
+    get_user_case,
+    get_user_evidence,
+    check_login_rate_limit,
+    record_failed_login,
+    clear_login_attempts
+)
 
 from models import (
     Case,
@@ -145,6 +159,31 @@ def seed_initial_users():
 
 seed_initial_users()
 
+def ensure_schema_and_migration():
+    db = SessionLocal()
+    try:
+        from sqlalchemy import text
+        res = db.execute(text("PRAGMA table_info(cases);")).fetchall()
+        cols = [r[1] for r in res]
+        if "user_id" not in cols:
+            db.execute(text("ALTER TABLE cases ADD COLUMN user_id INTEGER REFERENCES users(id);"))
+            db.commit()
+
+        owner = db.query(User).filter(User.username == "dhaniya").first()
+        if owner:
+            db.execute(
+                text("UPDATE cases SET user_id = :uid WHERE (user_id IS NULL OR user_id = 0) AND (LOWER(investigator) LIKE '%dhaniya%');"),
+                {"uid": owner.id}
+            )
+            db.commit()
+    except Exception as e:
+        print("Schema/migration check warning:", e)
+        db.rollback()
+    finally:
+        db.close()
+
+ensure_schema_and_migration()
+
 
 # ============================================================
 # FASTAPI APPLICATION
@@ -229,28 +268,6 @@ class UserLogin(BaseModel):
 
 
 # ============================================================
-# PASSWORD FUNCTIONS
-# ============================================================
-
-def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
-
-
-def verify_password(
-    plain_password: str,
-    hashed_password: str
-) -> bool:
-    try:
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"),
-            hashed_password.encode("utf-8")
-        )
-    except Exception:
-        return False
-
-
-# ============================================================
 # USER REGISTRATION API
 # ============================================================
 
@@ -259,64 +276,68 @@ def register_user(
     user: UserRegister,
     db: Session = Depends(get_db)
 ):
+    norm_username = user.username.strip().lower()
+    norm_email = user.email.strip().lower()
 
-    # Check username
-    existing_user = db.query(
-        User
-    ).filter(
-        User.username == user.username
+    if not norm_username or len(norm_username) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be at least 3 characters long"
+        )
+    if not user.password or len(user.password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters long"
+        )
+
+    # Check unique username
+    existing_user = db.query(User).filter(
+        func.lower(User.username) == norm_username
     ).first()
 
     if existing_user:
-
         raise HTTPException(
             status_code=400,
             detail="Username already exists"
         )
 
-    # Check email
-    existing_email = db.query(
-        User
-    ).filter(
-        User.email == user.email
+    # Check unique email
+    existing_email = db.query(User).filter(
+        func.lower(User.email) == norm_email
     ).first()
 
     if existing_email:
-
         raise HTTPException(
             status_code=400,
             detail="Email already registered"
         )
 
-    # Create user
+    # Create new user
     new_user = User(
-        username=user.username,
-        email=user.email,
-        password_hash=hash_password(
-            user.password
-        ),
-        role=user.role
+        username=norm_username,
+        email=norm_email,
+        password_hash=hash_password(user.password),
+        role=user.role or "Investigator"
     )
 
     db.add(new_user)
-
     db.commit()
-
     db.refresh(new_user)
 
+    access_token = create_access_token(
+        data={"sub": str(new_user.id), "username": new_user.username, "role": new_user.role}
+    )
+
     return {
-
-        "message":
-            "User registered successfully",
-
-        "username":
-            new_user.username,
-
-        "email":
-            new_user.email,
-
-        "role":
-            new_user.role
+        "message": "User registered successfully",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "role": new_user.role
+        }
     }
 
 
@@ -327,45 +348,66 @@ def register_user(
 @app.post("/login")
 def login_user(
     user: UserLogin,
+    request: Request,
     db: Session = Depends(get_db)
 ):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    norm_username = user.username.strip().lower()
 
-    db_user = db.query(
-        User
-    ).filter(
-        User.username == user.username
+    # Enforce brute-force rate limit
+    check_login_rate_limit(client_ip, norm_username)
+
+    db_user = db.query(User).filter(
+        (func.lower(User.username) == norm_username) |
+        (func.lower(User.email) == norm_username)
     ).first()
 
-    if not db_user:
-
+    if not db_user or not verify_password(user.password, db_user.password_hash):
+        record_failed_login(client_ip, norm_username)
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password"
         )
 
-    if not verify_password(
-        user.password,
-        db_user.password_hash
-    ):
-
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password"
-        )
+    # Successful login: clear attempt history and issue JWT
+    clear_login_attempts(client_ip, norm_username)
+    access_token = create_access_token(
+        data={"sub": str(db_user.id), "username": db_user.username, "role": db_user.role}
+    )
 
     return {
+        "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": db_user.id,
+            "username": db_user.username,
+            "email": db_user.email,
+            "role": db_user.role
+        }
+    }
 
-        "message":
-            "Login successful",
 
-        "username":
-            db_user.username,
+# ============================================================
+# CURRENT USER & LOGOUT APIs
+# ============================================================
 
-        "email":
-            db_user.email,
+@app.get("/auth/me")
+def get_auth_me(
+    current_user: User = Depends(get_current_user)
+):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "role": current_user.role
+    }
 
-        "role":
-            db_user.role
+
+@app.post("/auth/logout")
+def logout_user():
+    return {
+        "message": "Logged out successfully"
     }
 
 
@@ -510,17 +552,18 @@ def generate_next_evidence_id(db: Session) -> str:
 @app.post("/cases")
 def create_case(
     case_data: CaseCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
     # Generate Case ID automatically
     case_id = generate_next_case_id(db)
 
-    # Create case
+    # Create case strictly associated with authenticated user
     new_case = Case(
         case_id=case_id,
+        user_id=current_user.id,
         case_name=case_data.case_name,
-        investigator=case_data.investigator,
+        investigator=case_data.investigator or current_user.username,
         description=case_data.description,
         status=case_data.status
     )
@@ -531,7 +574,6 @@ def create_case(
 
     return {
         "message": "Case created successfully",
-
         "case": {
             "case_id": new_case.case_id,
             "case_name": new_case.case_name,
@@ -555,10 +597,8 @@ def get_cases(
     if "text/html" in accept and "application/json" not in accept and os.path.isfile(index_html):
         return FileResponse(index_html)
 
-    cases = db.query(
-        Case
-    ).all()
-
+    current_user = get_current_user_from_request(request, db)
+    cases = db.query(Case).filter(Case.user_id == current_user.id).all()
     return cases
 
 
@@ -569,23 +609,10 @@ def get_cases(
 @app.get("/cases/{case_id}")
 def get_case(
     case_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    case = db.query(
-        Case
-    ).filter(
-        Case.case_id == case_id
-    ).first()
-
-    if not case:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Case not found"
-        )
-
-    return case
+    return get_user_case(case_id, db, current_user)
 
 
 # ============================================================
@@ -596,49 +623,26 @@ def get_case(
 def update_case(
     case_id: str,
     case_data: CaseUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    case = db.query(
-        Case
-    ).filter(
-        Case.case_id == case_id
-    ).first()
-
-    if not case:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Case not found"
-        )
+    case = get_user_case(case_id, db, current_user)
 
     if case_data.case_name is not None:
-
         case.case_name = case_data.case_name
-
     if case_data.investigator is not None:
-
         case.investigator = case_data.investigator
-
     if case_data.description is not None:
-
         case.description = case_data.description
-
     if case_data.status is not None:
-
         case.status = case_data.status
 
     db.commit()
-
     db.refresh(case)
 
     return {
-
-        "message":
-            "Case updated successfully",
-
-        "case":
-            case
+        "message": "Case updated successfully",
+        "case": case
     }
 
 
@@ -649,33 +653,23 @@ def update_case(
 @app.delete("/cases/{case_id}")
 def delete_case(
     case_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    case = get_user_case(case_id, db, current_user)
 
-    case = db.query(
-        Case
-    ).filter(
-        Case.case_id == case_id
-    ).first()
-
-    if not case:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Case not found"
-        )
+    # Cascading removal of associated evidence and analysis results for this case
+    evidence_items = db.query(Evidence).filter(Evidence.case_id == case_id).all()
+    for ev in evidence_items:
+        db.query(AnalysisResult).filter(AnalysisResult.evidence_id == ev.evidence_id).delete()
+        db.delete(ev)
 
     db.delete(case)
-
     db.commit()
 
     return {
-
-        "message":
-            "Case deleted successfully",
-
-        "case_id":
-            case_id
+        "message": "Case deleted successfully",
+        "case_id": case_id
     }
 
 # ============================================================
@@ -685,31 +679,13 @@ def delete_case(
 
 @app.post("/evidence/upload")
 async def upload_evidence(
-
     case_id: str,
-
     file: UploadFile = File(...),
-
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-
 ):
-
-    # --------------------------------------------------------
-    # CHECK CASE
-    # --------------------------------------------------------
-
-    case = db.query(
-        Case
-    ).filter(
-        Case.case_id == case_id
-    ).first()
-
-    if not case:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Case not found"
-        )
+    # Strictly verify that current_user owns the target case
+    case = get_user_case(case_id, db, current_user)
 
     # --------------------------------------------------------
     # GENERATE EVIDENCE ID
@@ -848,10 +824,12 @@ def get_all_evidence(
     if "text/html" in accept and "application/json" not in accept and os.path.isfile(index_html):
         return FileResponse(index_html)
 
-    evidence = db.query(
-        Evidence
-    ).all()
+    current_user = get_current_user_from_request(request, db)
+    user_case_ids = [c.case_id for c in db.query(Case.case_id).filter(Case.user_id == current_user.id).all()]
+    if not user_case_ids:
+        return []
 
+    evidence = db.query(Evidence).filter(Evidence.case_id.in_(user_case_ids)).all()
     return evidence
 
 
@@ -862,22 +840,10 @@ def get_all_evidence(
 @app.get("/evidence/{evidence_id}")
 def get_evidence(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Evidence not found"
-        )
-
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
     return evidence
 
 
@@ -913,21 +879,10 @@ def resolve_evidence_file_path(evidence: Evidence) -> str:
 @app.get("/evidence/{evidence_id}/verify")
 def verify_evidence(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Evidence not found"
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     resolved_path = resolve_evidence_file_path(evidence)
 
@@ -1015,215 +970,87 @@ def verify_evidence(
 
 @app.get("/dashboard/statistics")
 def get_dashboard_statistics(
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # Retrieve only cases belonging to the authenticated user
+    user_cases = db.query(Case).filter(Case.user_id == current_user.id).all()
+    user_case_ids = [c.case_id for c in user_cases]
+    total_cases = len(user_cases)
 
-    # --------------------------------------------------------
-    # 1. TOTAL CASES
-    # --------------------------------------------------------
+    # Empty state for new user with zero cases
+    if total_cases == 0:
+        return {
+            "total_cases": 0,
+            "total_evidence": 0,
+            "verified_evidence": 0,
+            "analyses_completed": 0,
+            "yara_matches": 0,
+            "suspicious_events": 0,
+            "high_risk_findings": 0,
+            "open_investigations": 0
+        }
 
-    total_cases = db.query(
-        Case
-    ).count()
+    # Retrieve only evidence belonging to the user's cases
+    user_evidence = db.query(Evidence).filter(Evidence.case_id.in_(user_case_ids)).all()
+    total_evidence = len(user_evidence)
+    verified_evidence = sum(1 for e in user_evidence if e.status == "Verified")
+    open_investigations = sum(1 for c in user_cases if c.status in ["Open", "In Progress"])
+    user_evidence_ids = [e.evidence_id for e in user_evidence]
 
-    # --------------------------------------------------------
-    # 2. TOTAL EVIDENCE
-    # --------------------------------------------------------
+    if not user_evidence_ids:
+        return {
+            "total_cases": total_cases,
+            "total_evidence": 0,
+            "verified_evidence": 0,
+            "analyses_completed": 0,
+            "yara_matches": 0,
+            "suspicious_events": 0,
+            "high_risk_findings": 0,
+            "open_investigations": open_investigations
+        }
 
-    total_evidence = db.query(
-        Evidence
-    ).count()
-
-    # --------------------------------------------------------
-    # 3. VERIFIED EVIDENCE
-    # --------------------------------------------------------
-
-    verified_evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.status == "Verified"
-    ).count()
-
-    # --------------------------------------------------------
-    # 4. OPEN / ACTIVE INVESTIGATIONS
-    # --------------------------------------------------------
-
-    open_investigations = db.query(
-        Case
-    ).filter(
-        Case.status.in_(
-            ["Open", "In Progress"]
-        )
-    ).count()
-
-    # --------------------------------------------------------
-    # 5. COMPLETED ANALYSES
-    # --------------------------------------------------------
-
-    completed_analysis_records = db.query(
-        AnalysisResult
-    ).filter(
-        AnalysisResult.analysis_type == "complete"
+    # Retrieve only completed analysis records for the user's evidence
+    completed_analysis_records = db.query(AnalysisResult).filter(
+        AnalysisResult.analysis_type == "complete",
+        AnalysisResult.evidence_id.in_(user_evidence_ids)
     ).all()
 
-    analyzed_evidence_ids = set()
-
-    for record in completed_analysis_records:
-
-        analyzed_evidence_ids.add(
-            record.evidence_id
-        )
-
-    analyses_completed = len(
-        analyzed_evidence_ids
-    )
-
-    # --------------------------------------------------------
-    # 6. YARA MATCHES
-    # --------------------------------------------------------
+    analyzed_evidence_ids = {r.evidence_id for r in completed_analysis_records}
+    analyses_completed = len(analyzed_evidence_ids)
 
     yara_matches = 0
-
-    yara_records = db.query(
-        AnalysisResult
-    ).filter(
-        AnalysisResult.analysis_type == "complete"
-    ).all()
-
-    for record in yara_records:
-
-        try:
-
-            result_data = json.loads(
-                record.result
-            )
-
-            yara_data = result_data.get(
-                "yara",
-                {}
-            )
-
-            yara_matches += int(
-                yara_data.get(
-                    "match_count",
-                    0
-                )
-            )
-
-        except Exception:
-
-            continue
-
-    # --------------------------------------------------------
-    # 7. SUSPICIOUS EVENTS
-    # --------------------------------------------------------
-
     suspicious_events = 0
-
-    for record in yara_records:
-
-        try:
-
-            result_data = json.loads(
-                record.result
-            )
-
-            analyzed_events = result_data.get(
-                "analyzed_events",
-                []
-            )
-
-            for event in analyzed_events:
-
-                rule_score = event.get(
-                    "rule_score",
-                    0
-                )
-
-                try:
-
-                    rule_score = float(
-                        rule_score
-                    )
-
-                except Exception:
-
-                    rule_score = 0
-
-                if rule_score > 0:
-
-                    suspicious_events += 1
-
-        except Exception:
-
-            continue
-
-    # --------------------------------------------------------
-    # 8. HIGH-RISK FINDINGS
-    # --------------------------------------------------------
-
     high_risk_findings = 0
 
-    for record in yara_records:
-
+    for record in completed_analysis_records:
         try:
+            result_data = json.loads(record.result)
+            yara_data = result_data.get("yara", {})
+            yara_matches += int(yara_data.get("match_count", 0))
 
-            result_data = json.loads(
-                record.result
-            )
+            analyzed_events = result_data.get("analyzed_events", [])
+            for event in analyzed_events:
+                rule_score = float(event.get("rule_score", 0) or 0)
+                if rule_score > 0:
+                    suspicious_events += 1
 
-            risk_data = result_data.get(
-                "risk",
-                {}
-            )
-
-            risk_level = str(
-                risk_data.get(
-                    "risk_level",
-                    ""
-                )
-            ).upper()
-
-            if risk_level in [
-                "HIGH",
-                "CRITICAL"
-            ]:
-
+            risk_data = result_data.get("risk", {})
+            risk_level = str(risk_data.get("risk_level", "")).upper()
+            if risk_level in ["HIGH", "CRITICAL"]:
                 high_risk_findings += 1
-
         except Exception:
-
             continue
 
-    # --------------------------------------------------------
-    # 9. RETURN DASHBOARD STATISTICS
-    # --------------------------------------------------------
-
     return {
-
-        "total_cases":
-            total_cases,
-
-        "total_evidence":
-            total_evidence,
-
-        "verified_evidence":
-            verified_evidence,
-
-        "analyses_completed":
-            analyses_completed,
-
-        "yara_matches":
-            yara_matches,
-
-        "suspicious_events":
-            suspicious_events,
-
-        "high_risk_findings":
-            high_risk_findings,
-
-        "open_investigations":
-            open_investigations
+        "total_cases": total_cases,
+        "total_evidence": total_evidence,
+        "verified_evidence": verified_evidence,
+        "analyses_completed": analyses_completed,
+        "yara_matches": yara_matches,
+        "suspicious_events": suspicious_events,
+        "high_risk_findings": high_risk_findings,
+        "open_investigations": open_investigations
     }
 
 
@@ -1234,21 +1061,10 @@ def get_dashboard_statistics(
 @app.post("/analysis/{evidence_id}")
 def analyze_single_memory(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Evidence not found"
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     if not os.path.exists(
         evidence.file_path
@@ -1314,21 +1130,10 @@ def analyze_single_memory(
 @app.get("/analysis/status/{evidence_id}")
 def get_analysis_status(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-            status_code=404,
-            detail=f"Evidence not found: {evidence_id}"
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     plugins = {
 
@@ -1472,21 +1277,10 @@ def get_analysis_status(
 @app.get("/analysis/risk/{evidence_id}")
 def get_analysis_risk(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Evidence not found"
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     analysis_record = db.query(
         AnalysisResult
@@ -1724,25 +1518,13 @@ def save_analysis_result(
 @app.post("/analysis/full/{evidence_id}")
 def full_memory_analysis(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
     # --------------------------------------------------------
-    # 1. FIND EVIDENCE
+    # 1. FIND EVIDENCE & VERIFY OWNERSHIP
     # --------------------------------------------------------
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-            status_code=404,
-            detail="Evidence not found"
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     # --------------------------------------------------------
     # 2. CHECK FILE & RESOLVE PATH
@@ -2517,31 +2299,12 @@ def full_memory_analysis(
 
 @app.get("/analysis/results/{evidence_id}")
 def get_analysis_results(
-
     evidence_id: str,
-
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-
 ):
-
-    # --------------------------------------------------------
-    # FIND EVIDENCE
-    # --------------------------------------------------------
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-
-            status_code=404,
-
-            detail="Evidence not found"
-        )
+    # Strictly verify ownership
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     # --------------------------------------------------------
     # GET LATEST COMPLETE ANALYSIS
@@ -2789,27 +2552,11 @@ def get_analysis_results(
 
 @app.delete("/evidence/{evidence_id}")
 def delete_evidence(
-
     evidence_id: str,
-
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-
 ):
-
-    evidence = db.query(
-        Evidence
-    ).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-
-        raise HTTPException(
-
-            status_code=404,
-
-            detail="Evidence not found"
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     # Delete physical file
     if os.path.exists(
@@ -2852,19 +2599,12 @@ def delete_evidence(
 # REPORTS & GEMINI AI FORENSIC RECOMMENDATIONS
 # ============================================================
 
-def _load_report_evidence_and_analysis(evidence_id: str, db: Session) -> dict:
+def _load_report_evidence_and_analysis(evidence_id: str, db: Session, current_user: User) -> dict:
     """
-    Helper to safely retrieve evidence, case metadata, and complete analysis.
+    Helper to safely retrieve evidence, case metadata, and complete analysis,
+    strictly verifying that the authenticated user owns the parent case.
     """
-    evidence = db.query(Evidence).filter(
-        Evidence.evidence_id == evidence_id
-    ).first()
-
-    if not evidence:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Evidence {evidence_id} not found."
-        )
+    evidence, case = get_user_evidence(evidence_id, db, current_user)
 
     complete_record = db.query(AnalysisResult).filter(
         AnalysisResult.evidence_id == evidence_id,
@@ -2926,16 +2666,12 @@ def _load_report_evidence_and_analysis(evidence_id: str, db: Session) -> dict:
             except Exception:
                 pass
 
-    case_data = db.query(Case).filter(
-        Case.case_id == evidence.case_id
-    ).first()
-
     complete_result["case"] = {
-        "case_id": case_data.case_id if case_data else evidence.case_id,
-        "case_name": case_data.case_name if case_data else "Forensic Investigation",
-        "investigator": case_data.investigator if case_data else "Dhaniya",
-        "description": case_data.description if case_data else None,
-        "status": case_data.status if case_data else "Open"
+        "case_id": case.case_id,
+        "case_name": case.case_name or "Forensic Investigation",
+        "investigator": case.investigator or current_user.username,
+        "description": case.description or "",
+        "status": case.status or "Open"
     }
 
     complete_result["evidence"] = {
@@ -2957,6 +2693,7 @@ def _load_report_evidence_and_analysis(evidence_id: str, db: Session) -> dict:
 @app.post("/reports/recommendations/{evidence_id}")
 def get_report_recommendations(
     evidence_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -2964,7 +2701,7 @@ def get_report_recommendations(
     Uses Google Gemini when GEMINI_API_KEY is configured; seamlessly falls back
     to the offline Forensic Rule Engine when Gemini is not configured or unavailable.
     """
-    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db, current_user)
     recommendations = get_recommendations(analysis_data)
     return recommendations
 
@@ -2972,14 +2709,17 @@ def get_report_recommendations(
 @app.get("/reports/pdf/{evidence_id}")
 def download_pdf_report(
     evidence_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Generates and downloads a formal forensic investigation PDF report
     containing case metadata, SHA-256 verification, Volatility findings,
     YARA detections, IOCs, ML assessment, risk score, and AI recommendations.
+    Strictly verifies evidence ownership for the requesting user.
     """
-    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    current_user = get_current_user_from_request(request, db)
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db, current_user)
     pdf_bytes = generate_pdf_report(analysis_data)
     
     case_id = analysis_data.get("case", {}).get("case_id", "FRA")
@@ -2997,12 +2737,15 @@ def download_pdf_report(
 @app.get("/reports/json/{evidence_id}")
 def export_json_report(
     evidence_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Exports the comprehensive forensic investigation report in structured JSON format.
+    Strictly verifies evidence ownership for the requesting user.
     """
-    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    current_user = get_current_user_from_request(request, db)
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db, current_user)
     json_report = generate_json_report(analysis_data)
     
     case_id = analysis_data.get("case", {}).get("case_id", "FRA")
@@ -3020,12 +2763,15 @@ def export_json_report(
 @app.get("/reports/evidence-log/{evidence_id}")
 def export_evidence_log(
     evidence_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Exports a digital evidence integrity & verification audit log in JSON format.
+    Strictly verifies evidence ownership for the requesting user.
     """
-    analysis_data = _load_report_evidence_and_analysis(evidence_id, db)
+    current_user = get_current_user_from_request(request, db)
+    analysis_data = _load_report_evidence_and_analysis(evidence_id, db, current_user)
     log_data = generate_evidence_log(analysis_data)
 
     case_id = analysis_data.get("case", {}).get("case_id", "FRA")

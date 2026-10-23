@@ -3,6 +3,7 @@
 .register-page-container {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
 
   display: flex;
   justify-content: center;
@@ -12,6 +13,10 @@
 
   padding: 30px 20px;
   font-family: Arial, sans-serif;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
 }
 
 .register-main-card {
@@ -24,6 +29,8 @@
   padding: 35px 50px 40px;
 
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+  margin: auto;
+  box-sizing: border-box;
 }
 
 
@@ -69,15 +76,22 @@
   border-radius: 50%;
 }
 
+.register-shield-circle svg {
+  width: 45px;
+  height: 45px;
+}
+
 .register-logo-section h1 {
   font-size: 34px;
   color: #24364d;
   margin-bottom: 8px;
+  word-break: break-word;
 }
 
 .register-logo-section p {
   font-size: 17px;
   color: #64748b;
+  line-height: 1.4;
 }
 
 
@@ -124,6 +138,7 @@
   padding: 0 15px;
 
   background: white;
+  box-sizing: border-box;
 }
 
 .register-input-box:focus-within {
@@ -134,11 +149,13 @@
 .register-input-box svg {
   color: #64748b;
   margin-right: 10px;
+  flex-shrink: 0;
 }
 
 .register-input-box input,
 .register-input-box select {
   width: 100%;
+  min-width: 0;
   height: 100%;
 
   border: none;
@@ -212,18 +229,154 @@
 }
 
 
-/* MOBILE */
+/* TABLET (<= 700px) */
 
 @media (max-width: 700px) {
 
+  .register-page-container {
+    padding: 24px 16px;
+  }
+
   .register-main-card {
     width: 100%;
-    padding: 30px 25px;
+    max-width: 100%;
+    padding: 28px 24px 30px;
+    margin: auto 0;
   }
 
   .register-two-column {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .register-logo-section h1 {
+    font-size: 28px;
+  }
+
+  .register-logo-section p {
+    font-size: 15px;
+  }
+
+}
+
+
+/* MOBILE / ANDROID (<= 480px, e.g. 430px, 390px, 360px) */
+
+@media (max-width: 480px) {
+
+  .register-page-container {
+    padding: 16px 12px;
+    justify-content: flex-start;
+  }
+
+  .register-main-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 22px 16px 24px;
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  }
+
+  .register-shield-circle {
+    width: 58px;
+    height: 58px;
+    margin-bottom: 10px;
+  }
+
+  .register-shield-circle svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .register-logo-section h1 {
+    font-size: 24px;
+    margin-bottom: 6px;
+  }
+
+  .register-logo-section p {
+    font-size: 13px;
+  }
+
+  .register-field {
+    margin-bottom: 14px;
+  }
+
+  .register-field label {
+    font-size: 14px;
+    margin-bottom: 5px;
+  }
+
+  .register-input-box {
+    height: 48px;
+    padding: 0 12px;
+    border-radius: 8px;
+  }
+
+  .register-input-box svg {
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+  }
+
+  .register-input-box input,
+  .register-input-box select {
+    font-size: 16px;
+  }
+
+  .register-submit-button {
+    height: 48px;
+    font-size: 16px;
+    border-radius: 8px;
+  }
+
+  .register-login-text {
+    font-size: 14px;
+    margin-top: 16px;
+  }
+
+}
+
+
+/* SMALL MOBILE (<= 360px, e.g. 320px) */
+
+@media (max-width: 360px) {
+
+  .register-page-container {
+    padding: 12px 8px;
+  }
+
+  .register-main-card {
+    padding: 18px 12px 20px;
+    border-radius: 16px;
+  }
+
+  .register-shield-circle {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 8px;
+  }
+
+  .register-shield-circle svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .register-logo-section h1 {
+    font-size: 21px;
+  }
+
+  .register-logo-section p {
+    font-size: 12px;
+  }
+
+  .register-input-box {
+    height: 44px;
+    padding: 0 10px;
+  }
+
+  .register-submit-button {
+    height: 44px;
+    font-size: 15px;
   }
 
 }

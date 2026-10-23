@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import "./Dashboard.css";
-import { API_BASE_URL as API_BASE } from "../config";
+import { API_BASE_URL as API_BASE, authFetch } from "../config";
 
 function Dashboard() {
   const [statistics, setStatistics] = useState(null);
@@ -29,22 +29,13 @@ function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const evidenceId = "MEM-001";
-
   const fetchDashboardData = async () => {
     try {
       setError("");
 
-      const [
-        statisticsResponse,
-        casesResponse,
-        statusResponse,
-        riskResponse,
-      ] = await Promise.all([
-        fetch(`${API_BASE}/dashboard/statistics`),
-        fetch(`${API_BASE}/cases`),
-        fetch(`${API_BASE}/analysis/status/${evidenceId}`),
-        fetch(`${API_BASE}/analysis/risk/${evidenceId}`),
+      const [statisticsResponse, casesResponse] = await Promise.all([
+        authFetch(`${API_BASE}/dashboard/statistics`),
+        authFetch(`${API_BASE}/cases`),
       ]);
 
       if (!statisticsResponse.ok) {
@@ -61,12 +52,26 @@ function Dashboard() {
       let statusData = null;
       let riskResult = null;
 
-      if (statusResponse.ok) {
-        statusData = await statusResponse.json();
+      // Dynamically locate user's evidence to load analysis status & risk
+      const evResponse = await authFetch(`${API_BASE}/evidence`);
+      let userEvidence = [];
+      if (evResponse.ok) {
+        userEvidence = await evResponse.json();
       }
 
-      if (riskResponse.ok) {
-        riskResult = await riskResponse.json();
+      if (Array.isArray(userEvidence) && userEvidence.length > 0) {
+        const activeEvidenceId = userEvidence[userEvidence.length - 1].evidence_id;
+        const [statusResponse, riskResponse] = await Promise.all([
+          authFetch(`${API_BASE}/analysis/status/${activeEvidenceId}`),
+          authFetch(`${API_BASE}/analysis/risk/${activeEvidenceId}`),
+        ]);
+
+        if (statusResponse.ok) {
+          statusData = await statusResponse.json();
+        }
+        if (riskResponse.ok) {
+          riskResult = await riskResponse.json();
+        }
       }
 
       setStatistics(statisticsData);

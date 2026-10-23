@@ -8,3 +8,4 @@ yara-python
 pandas
 joblib
 reportlab
+python-jose[cryptography]

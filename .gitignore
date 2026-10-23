@@ -22,6 +22,7 @@ __pycache__/
 *.sqlite
 *.sqlite3
 *.db-journal
+backups/
 
 # ============================================================
 # Evidence & Memory Dumps (Extremely large / sensitive)

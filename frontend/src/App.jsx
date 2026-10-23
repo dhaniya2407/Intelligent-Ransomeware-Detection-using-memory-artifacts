@@ -9,8 +9,15 @@ import Cases from "./pages/Cases";
 import Evidence from "./pages/Evidence";
 import Analysis from "./pages/Analysis";
 import Report from "./pages/Report";
+import { getAuthToken } from "./config";
+import { Navigate } from "react-router-dom";
 
 function Layout({ children }) {
+  const token = getAuthToken() || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+  if (!token) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div className="app">
       <Sidebar />
