@@ -89,9 +89,11 @@ function Cases() {
   // ============================================================
 
   useEffect(() => {
-
     fetchCases();
-
+    const u = getCurrentUser();
+    if (u?.username) {
+      setFormData(prev => ({ ...prev, investigator: prev.investigator || u.username }));
+    }
   }, []);
 
 

@@ -57,18 +57,30 @@ export const API_BASE_URL = (() => {
 
 export const getAuthToken = () => {
   if (typeof window !== "undefined") {
-    return localStorage.getItem("forensiransom_token");
+    for (const key of ["forensiransom_token", "token"]) {
+      const val = localStorage.getItem(key);
+      if (val && val !== "undefined" && val !== "null" && typeof val === "string" && val.trim() !== "") {
+        return val.trim();
+      }
+    }
   }
   return null;
 };
 
 export const getCurrentUser = () => {
   if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem("forensiransom_user");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
+    for (const key of ["forensiransom_user", "user"]) {
+      const stored = localStorage.getItem(key);
+      if (stored && stored !== "undefined" && stored !== "null" && typeof stored === "string") {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === "object" && parsed.username) {
+            return parsed;
+          }
+        } catch {
+          // ignore corrupted JSON
+        }
+      }
     }
   }
   return null;
@@ -76,11 +88,18 @@ export const getCurrentUser = () => {
 
 export const setAuthSession = (token, user) => {
   if (typeof window !== "undefined") {
-    if (token) {
-      localStorage.setItem("forensiransom_token", token);
+    if (token && token !== "undefined" && token !== "null" && String(token).trim() !== "") {
+      const cleanToken = String(token).trim();
+      localStorage.setItem("forensiransom_token", cleanToken);
+      localStorage.setItem("token", cleanToken);
+    } else {
+      localStorage.removeItem("forensiransom_token");
+      localStorage.removeItem("token");
     }
-    if (user) {
-      localStorage.setItem("forensiransom_user", JSON.stringify(user));
+    if (user && typeof user === "object") {
+      const userStr = JSON.stringify(user);
+      localStorage.setItem("forensiransom_user", userStr);
+      localStorage.setItem("user", userStr);
     }
   }
 };
@@ -102,10 +121,10 @@ export const clearAuthSession = () => {
 // ============================================================
 
 export const authFetch = async (url, options = {}) => {
-  const token = getAuthToken() || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+  const token = getAuthToken();
   const headers = new Headers(options.headers || {});
 
-  if (token && !headers.has("Authorization")) {
+  if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
@@ -125,7 +144,7 @@ export const authFetch = async (url, options = {}) => {
     if (typeof window !== "undefined") {
       const path = window.location.pathname;
       if (path !== "/" && path !== "/register") {
-        window.location.href = "/";
+        window.location.replace("/?session_expired=1");
       }
     }
   }

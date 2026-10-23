@@ -169,10 +169,15 @@ def ensure_schema_and_migration():
             db.execute(text("ALTER TABLE cases ADD COLUMN user_id INTEGER REFERENCES users(id);"))
             db.commit()
 
-        owner = db.query(User).filter(User.username == "dhaniya").first()
+        owner = db.query(User).filter(func.lower(User.username) == "dhaniya").first()
+        if not owner:
+            owner = db.query(User).filter(User.id == 1).first()
+        if not owner:
+            owner = db.query(User).first()
+
         if owner:
             db.execute(
-                text("UPDATE cases SET user_id = :uid WHERE (user_id IS NULL OR user_id = 0) AND (LOWER(investigator) LIKE '%dhaniya%');"),
+                text("UPDATE cases SET user_id = :uid WHERE user_id IS NULL OR user_id = 0;"),
                 {"uid": owner.id}
             )
             db.commit()

@@ -8,6 +8,13 @@ function Login() {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [sessionNotice, setSessionNotice] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("session_expired") === "1" ? "Your previous session expired or token was invalid. Please sign in again." : "";
+    }
+    return "";
+  });
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -29,10 +36,8 @@ function Login() {
 
       const data = await response.json();
 
-      if (response.ok) {
+      if (response.ok && data.access_token) {
         setAuthSession(data.access_token, data.user);
-        localStorage.setItem("token", data.access_token);
-        localStorage.setItem("user", JSON.stringify(data.user));
         navigate("/dashboard");
       } else {
         alert(data.detail || "Invalid username or password");
@@ -486,6 +491,21 @@ function Login() {
           <p className="login-subtitle">
             AI-Based Digital Forensic Investigation Platform
           </p>
+
+          {sessionNotice && (
+            <div style={{
+              background: "rgba(239, 68, 68, 0.15)",
+              border: "1px solid rgba(239, 68, 68, 0.4)",
+              color: "#f87171",
+              padding: "10px 14px",
+              borderRadius: "10px",
+              marginBottom: "20px",
+              fontSize: "14px",
+              lineHeight: "1.4"
+            }}>
+              {sessionNotice}
+            </div>
+          )}
 
 
           {/* LOGIN FORM */}

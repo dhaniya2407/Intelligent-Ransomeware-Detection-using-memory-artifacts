@@ -13,7 +13,7 @@ import { getAuthToken } from "./config";
 import { Navigate } from "react-router-dom";
 
 function Layout({ children }) {
-  const token = getAuthToken() || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+  const token = getAuthToken();
   if (!token) {
     return <Navigate to="/" replace />;
   }

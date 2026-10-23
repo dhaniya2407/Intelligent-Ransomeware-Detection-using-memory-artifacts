@@ -196,7 +196,7 @@ def get_current_user_from_request(request: Request, db: Session) -> User:
     if not token:
         token = request.query_params.get("token")
 
-    if not token:
+    if not token or (isinstance(token, str) and token.lower() in ("undefined", "null", "none", "")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token required. Please log in.",
@@ -241,16 +241,21 @@ def get_current_user_from_request(request: Request, db: Session) -> User:
     return user
 
 
+def get_auth_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
-    db: Session = Depends(lambda: SessionLocal())
+    db: Session = Depends(get_auth_db)
 ) -> User:
     """FastAPI dependency for protected routes."""
-    try:
-        return get_current_user_from_request(request, db)
-    finally:
-        db.close()
+    return get_current_user_from_request(request, db)
 
 
 # ============================================================
